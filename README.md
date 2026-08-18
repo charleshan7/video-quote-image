@@ -20,7 +20,9 @@
 纯中文版行距全图统一 148px、主画面高由句数反推 `1920 − (句数−1)×148`（9 句时正好等于 16:9 满宽，
 横幅双人镜头只能用这个数）。都是公式，不是每次现调。
 
-**三、翻译多轮校准。** 自查 → 机械 diff → 换模型外部交叉校验，三轮缺一不可。
+**三、多轮校准，从音频到中文逐层交叉。** 平台自动字幕自带语音识别错误，而下游全把它当事实来源，
+所以第零轮先用**第二家 ASR** 重跑入选片段校验英文原文（`asr_crosscheck.py`，`--asr-cmd` 传任意引擎的命令，
+不绑厂商）；再走自查 → 机械 diff → 换模型外部交叉校验。四轮缺一不可。
 自查抓不出的是这两类：引语的人称（说话人在"学别人说话"，写成「我们」意思整个翻转）、
 限定语和语气（删掉 `a lot of the safety talk is well-founded` 的前半句，就成了往人嘴里塞话）。
 
@@ -79,6 +81,7 @@ scripts/
   locate_quotes.py    回字幕定位真实时间点，quotes.json → spec.json
   render_quote_cards.py  抽帧、排版、渲染长图和总览图
   add_brand.py        叠品牌标识，位置用相对锚点
+  asr_crosscheck.py   ASR 交叉校验：切片 → 任意引擎重识别 → 与原字幕比对出报告
 assets/brand/     品牌素材（双猫圆环图标 + 字标，透明底）
 sync.sh           从本机技能库同步并推送
 requirements.txt  Pillow + imageio-ffmpeg
