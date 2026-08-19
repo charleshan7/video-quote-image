@@ -164,8 +164,19 @@ B 版更像纯视觉流，适合情绪型金句。**默认 A 版。**
 
 ```bash
   --verify-cmd 'whisper-cli -m ~/.cache/whisper-cpp/ggml-large-v3-turbo-q5_0.bin -f {wav} -l en -otxt -of {stem} -np' \
-  --verify-cmd '另一家引擎 {wav} {stem}'
+  --verify-cmd 'python3 <SKILL_DIR>/scripts/asr_elevenlabs.py --wav {wav} --stem {stem} --lang eng'
 ```
+
+**第二家一定要选架构不同的。** whisper 的错来自"语言模型按概率补词"，
+再挂一个 whisper 变体（哪怕 large-v3 对 turbo，编码器还是同一个）基本是白跑——它们会在同一处一起错。
+`scripts/asr_elevenlabs.py` 是 ElevenLabs Scribe 的适配器，训练数据和架构都不同，
+这才构成有效的第二票。实测就靠它翻案过一处 whisper 三次都判"字幕正确"的分歧。
+
+Scribe 计费：**约 67 字符/分钟音频**（2026-08 实测），免费档 10000 字符 ≈ 2.5 小时音频/月；
+一次 36 段的全量校验约 8.4 分钟音频 ≈ 563 字符，只占月额度 5.6%，**全量跑也在免费额度内**。
+超额计费默认关闭，额度用尽是报错不是扣钱。`--quota` 可随时查余量。
+
+⚠️ **Scribe 是云端 API，音频会离开本机。** 素材涉密时只能用本地 whisper。
 
 三个必须知道的坑：
 

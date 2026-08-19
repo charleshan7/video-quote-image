@@ -63,8 +63,10 @@ def verify(video, seg, rt, i1, i2, at, j1, j2, pad, cmds, workdir):
     wav = Path(workdir) / f"verify-{seg['id']}.wav"
     cut(video, max(0.0, seg["t"] - pad), pad * 2, wav)
     ctx = 3
+    # 两个待检片段各自带自己那侧的上下文。早先把 rt 的上下文和 at 的内容拼在一起，
+    # 拼出的序列在任何真实转写里都不存在，第二家引擎永远投不出"识别"票。
     srt_phrase = rt[max(0, i1 - ctx):i2 + ctx]
-    asr_phrase = (rt[max(0, i1 - ctx):i1] + at[j1:j2] + rt[i2:i2 + ctx])
+    asr_phrase = at[max(0, j1 - ctx):j2 + ctx]
     votes = []
     for cmd in cmds:
         stem = wav.with_suffix("")
