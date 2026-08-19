@@ -55,5 +55,25 @@ if [ "$DRY" = 1 ]; then
   git --no-pager diff --cached
   exit 0
 fi
+# 分支守卫：本脚本在**当前分支**上 commit。停在别的分支时（特性分支没切回来）
+# 提交会落在那个分支上，而远端 main 纹丝不动。
+# 姊妹仓库 skills-backup 就是这么静默丢了两次同步——push 报成功、远端 4 天没动。
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$BRANCH" != "main" ]; then
+  echo "⚠️  当前分支是 $BRANCH，不是 main。"
+  echo "    本仓库的内容应该都在 main 上。请先处理该分支："
+  echo "      git checkout main && git merge --ff-only $BRANCH"
+  echo "    然后重跑本脚本。"
+  exit 1
+fi
+
 git commit -m "${1:-sync: 从本机技能库同步}"
-git push
+git push -q origin "$BRANCH"
+
+# 推送后核实远端真的收到了，不靠 push 的退出码
+git fetch -q origin
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$BRANCH")" ]; then
+  echo "⚠️  push 后远端与本地不一致，未真正推上去。"
+  exit 1
+fi
+echo "✅ 已同步并推送（$BRANCH @ $(git rev-parse --short HEAD)）"
