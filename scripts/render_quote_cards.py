@@ -34,6 +34,47 @@ FOOTER_SIZE = 25
 FOOTER_UP = 60          # footer 基线距主画面底部
 
 
+def probe(video):
+    """读时长和有没有视频流。ffprobe 不一定在（imageio-ffmpeg 只带 ffmpeg），用 ffmpeg 自己的输出解析。"""
+    r = subprocess.run([FFMPEG, "-hide_banner", "-i", str(video)],
+                       capture_output=True, text=True)
+    m = re.search(r"Duration:\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)", r.stderr)
+    dur = (int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))) if m else None
+    return dur, ("Video:" in r.stderr)
+
+
+def check_complete(video, spec):
+    """拿不到完整视频就停下来问人，不要凑合着出图。
+
+    这条图的可信度全靠右下角那个时间码——读者能拿着它回原片核对。
+    片子要是被截断、下成了预览片段、或者根本是另一个版本，
+    渲染仍会"成功"：ffmpeg 取不到那一秒就退回最后一帧，
+    于是图上是 45:00 的时间码、画面却是 30:00 的内容。一处对不上，整套失信。
+    """
+    dur, has_video = probe(video)
+    if not has_video:
+        sys.exit(f"{video} 里没有视频流（yt-dlp 的分离音频流常见）。\n"
+                 f"→ 停下来告诉用户：需要带画面的那一份，不要继续渲染。")
+    if dur is None:
+        sys.exit(f"读不出 {video} 的时长，无法确认它是完整片子。\n"
+                 f"→ 停下来问用户这份文件对不对，不要继续渲染。")
+
+    need = 0.0
+    for image in spec["images"]:
+        for t in ([image.get("hero_time", 0)]
+                  + [q.get("frame_time", q["time"]) for q in image["quotes"]]
+                  + [q["time"] for q in image["quotes"]]):
+            need = max(need, float(t or 0))
+    if need > dur - 1.0:
+        sys.exit(
+            f"视频只有 {dur/60:.1f} 分钟（{dur:.1f}s），但 spec 里最晚要取到 {need/60:.1f} 分钟"
+            f"（{need:.1f}s）——这份不是完整原片。\n"
+            f"常见原因：会员/地区限制只下到预览片段、yt-dlp 中断、下成了剪辑版。\n"
+            f"→ 停下来告诉用户拿不到完整视频，问是重新下载还是改用别的源；"
+            f"不要用残缺的片子出图，时间码会和画面对不上。")
+    return dur
+
+
 def grab_frame(video, seconds):
     """先粗跳再精解 3 秒，避免长 GOP 视频取错帧。"""
     preseek = max(0.0, seconds - 3.0)
@@ -290,6 +331,7 @@ def main():
 
     spec = json.load(open(args.spec, encoding="utf-8"))
     meta = spec.get("meta", {})
+    check_complete(args.video, spec)      # 片子不完整就停在这里，别出图
     out_dir = Path(args.out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
         sys.exit(f"{out_dir} 非空；换一个输出目录，不覆盖已有成品")
