@@ -38,8 +38,10 @@
 # 2. 渲染
 .venv/bin/python scripts/render_quote_cards.py VIDEO --spec spec.json --out-dir output
 
-# 3. 只给封面叠品牌标识（可选）
-.venv/bin/python scripts/add_brand.py output/01_xxx.jpg --out output/01_xxx_带logo.jpg --spec spec.json
+# 3. 整套叠品牌标识（每张都叠，不是只叠封面）
+for f in output/0*.jpg; do
+  .venv/bin/python scripts/add_brand.py "$f" --out "${f%.jpg}_带logo.jpg" --spec spec.json
+done
 ```
 
 `quotes.json` 里的 `match` 必须**照抄字幕原文片段**，脚本靠它回字幕定位：

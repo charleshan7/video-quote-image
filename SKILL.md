@@ -286,9 +286,17 @@ prompt 里给全部原文段落 + 你的译文，让它只报"意思被改变"�
 | 双猫圆环图标 | 主画面左上角 `(margin, margin)`，和标题/字幕同一条左边距 | 高 96px，黑墨 + 白色柔光垫底 |
 | `@飞飞豆芽` 字标 | footer 那行右端 **+28px**，垂直居中对齐该行 | 墨迹高 22px，白色，无垫底 |
 
+**整套每张都叠，规则完全一致**，不是只叠封面。轮播图的读者常常单独截某一张转发，
+只有封面带标识的话，传播出去的那张往往不带。
+
+锚点在每张上都成立：渲染器对**每一张**图的主画面都画 kicker + 标题 + footer
+（`hero()` 在循环里对每张都调用），所以 footer 那行到处都在，字标锚得住。
+
 ```bash
-"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/add_brand.py" \
-  OUTPUT_DIR/01_xxx.jpg --out OUTPUT_DIR/01_xxx_带logo.jpg --spec spec.json
+for f in OUTPUT_DIR/0*.jpg; do
+  "<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/add_brand.py" \
+    "$f" --out "${f%.jpg}_带logo.jpg" --spec spec.json
+done
 ```
 
 素材唯一源 `~/Developer/ffdy-brand/`，脚本默认读这里，找不到就回落到仓库自带 `assets/brand/`。
@@ -297,7 +305,7 @@ prompt 里给全部原文段落 + 你的译文，让它只报"意思被改变"�
   必须按墨色深浅转 alpha（`line_alpha()`），只有黑线上色、白底透出照片。
 - **黑墨必须垫底**：主画面左上角亮度只有 76–107，纯黑线稿会沉进背景。垫底用**柔光**而不是白圆片——圆片边界硬，像贴纸。
 - **字标用白色**：主画面中下部亮度 39–130，黑字在那儿会消失。
-- **只叠封面那一张**，其余不叠。
+- **整套每张都叠**，同一套参数、同一个锚点，不要只叠封面。
 
 ---
 
