@@ -108,6 +108,10 @@ def main():
     json.dump(spec, open(args.out, "w", encoding="utf-8"),
               ensure_ascii=False, indent=1)
     print(f"\n→ {args.out}")
+    if missing:
+        # 静默少句会一路传到渲染那步，图出来了、句子没了，人眼很难发现
+        sys.exit(f"有 {len(missing)} 句没定位到，spec.json 已写出但缺这几句；"
+                 f"改好 match 重跑，别直接拿去渲染")
 
 
 if __name__ == "__main__":

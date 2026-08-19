@@ -38,7 +38,9 @@ description: 把长视频（访谈、播客、演讲、纪录片）做成中文�
 | 递进链条 | 7–8 句 |
 | 超过 8 句 | 要么在凑数，要么该拆成两张 |
 
-8 句是**物理上限**：条高 = (1920 − 695) ÷ 句数 = 153px，文字块已经顶到下限，再多就压字。
+8 句是版式 A 的**物理上限**：条高 = (1920 − 695) ÷ 句数 = 153px，文字块已经顶到下限，再多就压字。
+这个上限跟着 `--hero-fraction` 走，不是绝对数——主画面压到 0.45 时条高只剩 117px，能塞的句数反而更多但每条更窄。
+真正的判据是渲染时有没有报溢出告警。
 
 实测参考：Altman 那套 6 张的实际句数是 **5 / 7 / 7 / 5 / 5 / 7**——同一套里句数不齐是正常的，齐了反而说明在凑。
 
@@ -72,7 +74,7 @@ description: 把长视频（访谈、播客、演讲、纪录片）做成中文�
 "<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/render_quote_cards.py" VIDEO \
   --spec spec.json --out-dir output \
   --aspect 3:4 --width 1440 --hero-fraction 0.362 --hero-focus 0.0 \
-  --band-focus 0.34 --bands 7 --cn-size 52 --en-size 28
+  --band-focus 0.34 --cn-size 52 --en-size 28
 ```
 
 | 项 | 值 |
@@ -84,12 +86,26 @@ description: 把长视频（访谈、播客、演讲、纪录片）做成中文�
 | 时间码 | 右下角 24px |
 | 条间 | 细分隔线 |
 
-`--bands` 必须传**实际句数**，否则条高算错、末条留黑边。
+**`--bands` 不用传。** 默认按每张图的实际句数自适应——一套里各张句数不齐是常态，
+本来就没有一个"正确的全局值"。传了而且小于某张的句数会直接报错退出（老版本是**静默丢掉开头几句**，
+图照出、句子没了，肉眼极难发现）。
 
-### 版式 B · 纯中文压缩流（备用）
+文字装不进条高时脚本会打 `⚠️ 第N张 第M条 文字块 Xpx 装不进 Ypx`，那是让你减字数或调小 `--cn-size`，
+不是可以忽略的噪声——超出的部分会被裁掉。英文折超 2 行同理会告警。
+
+### 版式 B · 纯中文压缩流（⚠️ 暂不可执行）
+
+> **`compose_overlay.py` 不在本技能里，`--hero-lines` 在 `render_quote_cards.py` 里也没有这个参数。**
+> 下面这套规格是记录，不是可跑的命令。要纯中文居中效果，用 `render_quote_cards.py` 跑这套
+> 验证过的参数（即「居中细条」版式）：
+>
+> ```
+> --align center --text-pos center --no-en --no-timestamp --no-rule --no-hero-text
+> --hero-fraction 0.45 --band-focus 0.88 --cn-size 50
+> ```
 
 ```bash
-python compose_overlay.py VIDEO --spec spec-compact.json --out OUTDIR --hero-lines 1
+# 待补：compose_overlay.py VIDEO --spec spec-compact.json --out OUTDIR --hero-lines 1
 ```
 
 | 项 | 值 |
@@ -101,12 +117,13 @@ python compose_overlay.py VIDEO --spec spec-compact.json --out OUTDIR --hero-lin
 
 **9 句时 hero = 736px，正好等于原片 16:9 满宽，两侧不裁**——横幅两人镜头必须用这个数，再高就要竖裁，人会被切在画面边缘。
 
-想在主画面上叠 3 句（`--hero-lines 3`），主图必须换单人特写，两人全景做不到。
+想在主画面上叠 3 句（脚本里的 `--hero-lines 3`），主图必须换单人特写，两人全景做不到。
+（同属上面那份暂不可执行的规格。）
 
 ### 两版怎么选
 
 A 版信息密度高、可回溯（带时间码和英文原文），适合严肃内容和需要取信的场合；
-B 版更像纯视觉流，适合情绪型金句。**默认 A 版。**
+B 版更像纯视觉流，适合情绪型金句（但见上方警告：B 版脚本暂缺）。**默认 A 版。**
 
 ### 压暗：默认不压
 
@@ -293,12 +310,23 @@ prompt 里给全部原文段落 + 你的译文，让它只报"意思被改变"�
 锚点在每张上都成立：渲染器对**每一张**图的主画面都画 kicker + 标题 + footer
 （`hero()` 在循环里对每张都调用），所以 footer 那行到处都在，字标锚得住。
 
+**版式参数不用手抄给 `add_brand.py`。** 渲染时会在输出目录写一份 `render.json`
+（记下实际用的 `hero_fraction` / `margin` / footer 字号与位置 / 有没有主画面文字），
+`add_brand.py` 默认读源图同目录的这份，锚点自动跟着渲染参数走。
+以前两边各存一套默认值（渲染 0.42、叠标 0.362），改了 `--hero-fraction` 只改一侧，字标就飘进字幕条里。
+
+用 `--no-hero-text` 的版式主画面上**根本没有 footer 那行**，脚本会自动退到主画面左下角，
+和图标同一条左边距，并在输出里注明「退到左下角」。
+
 ```bash
+mkdir -p OUTPUT_DIR/branded
 for f in OUTPUT_DIR/0*.jpg; do
   "<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/add_brand.py" \
-    "$f" --out "${f%.jpg}_带logo.jpg" --spec spec.json
+    "$f" --out "OUTPUT_DIR/branded/$(basename "$f")" --spec spec.json
 done
 ```
+
+叠标结果单独放 `branded/`，别和原图混在一个目录——混着放重跑一次会把已带标的图再叠一遍。
 
 素材唯一源 `~/Developer/ffdy-brand/`，脚本默认读这里，找不到就回落到仓库自带 `assets/brand/`。
 
@@ -314,7 +342,8 @@ done
 
 - macOS 专用：字体路径写死在系统自带的 STHeiti / Hiragino / Arial Unicode。
 - 可调样式：`--aspect` `--width` `--hero-fraction` `--cn-size` `--en-size` `--title-size`
-  `--stroke` `--band-focus` `--hero-focus`。输出目录非空直接报错，不覆盖已有成品。
+  `--stroke` `--band-focus` `--hero-focus` `--band-margin`。`--bands` 默认自适应，一般不传。
+  输出目录非空直接报错，不覆盖已有成品。
 - 源片时长不足或分辨率低时仍输出 1440×1920，但**要说明这是放大尺寸**，不宣称提升清晰度。
 - `<SKILL_DIR>` = 本 `SKILL.md` 所在目录的绝对路径，不要假设工作目录就是它。
 - 依赖在自带 venv：命令一律用 `"<SKILL_DIR>/.venv/bin/python"`。缺失时重建：
@@ -327,4 +356,4 @@ done
 
 给出输出目录、总览图、`spec.json`（含每句时间戳便于回原片核对），并**明确声明文字来自字幕轨、非原画面**。
 
-**未逐张检查过的图不得报告为完成；三轮校准没跑完不得报告为完成。**
+**未逐张检查过的图不得报告为完成；四轮校准（第零～第三轮）没跑完不得报告为完成。**

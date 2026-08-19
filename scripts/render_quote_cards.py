@@ -28,6 +28,11 @@ CJK_BOLD = "/System/Library/Fonts/STHeiti Medium.ttc"
 CJK_REG = "/System/Library/Fonts/Hiragino Sans GB.ttc"
 LATIN = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
 
+# 主画面 footer 那行的版式：add_brand.py 靠它把字标锚到 footer 右侧，
+# 改这里要同步 render.json（渲染时自动写出，不用手抄）
+FOOTER_SIZE = 25
+FOOTER_UP = 60          # footer 基线距主画面底部
+
 
 def grab_frame(video, seconds):
     """先粗跳再精解 3 秒，避免长 GOP 视频取错帧。"""
@@ -101,6 +106,10 @@ def auto_darken(img, strength, target, box):
     return Image.blend(out, Image.new("RGB", out.size, (0, 0, 0)), alpha)
 
 
+def warn(msg):
+    print(f"\u26a0\ufe0f  {msg}", file=sys.stderr)
+
+
 def hhmm(t):
     return f"{int(t)//60:02d}:{int(t)%60:02d}"
 
@@ -134,7 +143,7 @@ def draw_text_block(img, entries, cfg):
                stroke_width=cfg["stroke"], stroke_fill=(0, 0, 0))
 
 
-def band(video, item, w, h, cfg):
+def band(video, item, w, h, cfg, label=""):
     # frame_time 让画面帧和引用时间码分离：原句正好落在过亮或杂乱的 b-roll 上时，
     # 换一帧干净的画面，右下角时间码仍标这句话的真实出处。
     img = ImageOps.fit(grab_frame(video, item.get("frame_time", item["time"])), (w, h),
@@ -148,12 +157,19 @@ def band(video, item, w, h, cfg):
     # 用整条取样会被画面暗部拉低均值，该压的地方压不到。
     probe = ImageDraw.Draw(img)
     cn_lines = wrap(probe, item.get("cn", ""), f_cn, text_w)
-    en_lines = (wrap(probe, item.get("en", ""), f_en, text_w)[:2]
-                if item.get("en") and cfg["show_en"] else [])
+    en_all = (wrap(probe, item.get("en", ""), f_en, text_w)
+              if item.get("en") and cfg["show_en"] else [])
+    en_lines = en_all[:2]
+    if len(en_all) > 2:
+        warn(f"{label} 英文折了 {len(en_all)} 行，只画前 2 行，"
+             f"丢掉「{' '.join(en_all[2:])[:40]}」——英文超 65 字符说明句子选长了")
 
     cn_h, en_h = int(cfg["cn_size"] * 1.27), int(cfg["en_size"] * 1.33)
     block = len(cn_lines) * cn_h + len(en_lines) * en_h + (14 if en_lines else 0)
     y = (h - block) / 2 if cfg["text_pos"] == "center" else h - block - 34
+    if y < 0:
+        warn(f"{label} 文字块 {block}px 装不进 {h}px 的条，开头 {int(-y)}px 会被裁掉"
+             f"——减字数，或调小 --cn-size / 减少该图句数")
 
     widest = max([probe.textlength(l, font=f_cn) for l in cn_lines] +
                  [probe.textlength(l, font=f_en) for l in en_lines] + [1.0])
@@ -191,7 +207,7 @@ def hero(video, t, title, w, h, meta, cfg):
     img = darken(img, cfg["hero_dim"])
     d = ImageDraw.Draw(img)
     f_k, f_t, f_s = (font(CJK_REG, 30), font(CJK_BOLD, cfg["title_size"]),
-                     font(LATIN, 25))
+                     font(LATIN, FOOTER_SIZE))
     m = cfg["margin"]
     lines = wrap(d, title, f_t, w - m * 2)
     step = int(cfg["title_size"] * 1.23)
@@ -204,7 +220,7 @@ def hero(video, t, title, w, h, meta, cfg):
         entries.append((line, f_t, m, y, (255, 255, 255)))
         y += step
     if meta.get("footer"):
-        entries.append((meta["footer"], f_s, m, h - 60, (188, 192, 200)))
+        entries.append((meta["footer"], f_s, m, h - FOOTER_UP, (188, 192, 200)))
 
     # 主画面文字块大、阴影半径按标题字号放大，否则大字压不住背景
     hero_cfg = dict(cfg, align="left", shadow=cfg["shadow"] * 1.8,
@@ -232,7 +248,9 @@ def main():
     ap.add_argument("--hero-focus", type=float, default=0.4)
     ap.add_argument("--auto-dim", type=float, default=0.0,
                     help="字幕条目标平均亮度(0-255)，超过就继续压暗；0=关闭")
-    ap.add_argument("--bands", type=int, default=4, help="每张图的字幕条数量")
+    ap.add_argument("--bands", type=int, default=0,
+                    help="每张图的字幕条数；默认 0=按每张实际句数自适应。"
+                         "一套里各张句数不齐是正常的，通常不用传")
     ap.add_argument("--margin", type=int, default=56,
                     help="主画面标题的左右留白")
     ap.add_argument("--band-margin", type=int, default=0,
@@ -280,15 +298,20 @@ def main():
     outputs = []
     for idx, image in enumerate(spec["images"], 1):
         quotes = image["quotes"]
-        n = min(args.bands, len(quotes))
+        if args.bands and args.bands < len(quotes):
+            sys.exit(f"第 {idx} 张「{image['title']}」有 {len(quotes)} 句，"
+                     f"--bands {args.bands} 会从开头丢掉 {len(quotes) - args.bands} 句。"
+                     f"\n别传 --bands，按实际句数渲染；真要截断就先改 spec.json")
+        n = len(quotes)
         band_h = (H - hero_h) // n
         canvas = Image.new("RGB", (W, H), "black")
         canvas.paste(hero(args.video, image.get("hero_time", quotes[0]["time"]),
                           image["title"], W, hero_h, meta, cfg), (0, 0))
         y = hero_h
-        for i, q in enumerate(quotes[-n:]):
+        for i, q in enumerate(quotes):
             h = band_h if i < n - 1 else H - y
-            canvas.paste(band(args.video, q, W, h, cfg), (0, y))
+            canvas.paste(band(args.video, q, W, h, cfg,
+                              label=f"第{idx}张 第{i + 1}条"), (0, y))
             y += h
         name = re.sub(r'[\\/:*?"<>|\s]+', "_", image["title"])[:24]
         path = out_dir / f"{idx:02d}_{name}.jpg"
@@ -307,6 +330,14 @@ def main():
     sheet_path = out_dir / "final_contact_sheet.jpg"
     sheet.save(sheet_path, quality=92, subsampling=0)
     print(f"总览图: {sheet_path}")
+
+    # 版式边车：add_brand.py 读它对齐锚点，避免两边默认值各走各的
+    (out_dir / "render.json").write_text(json.dumps({
+        "width": W, "height": H, "hero_h": hero_h,
+        "hero_fraction": args.hero_fraction, "margin": args.margin,
+        "hero_text": cfg["hero_text"], "footer": meta.get("footer", ""),
+        "footer_size": FOOTER_SIZE, "footer_up": FOOTER_UP,
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 if __name__ == "__main__":

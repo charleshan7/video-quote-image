@@ -16,6 +16,8 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 LATIN = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"   # 同 render_quote_cards
+# 下面两个只是兜底：正常情况下版式参数从渲染器写出的 render.json 读，
+# 手抄常量会在改 --hero-fraction 后悄悄错位。
 FOOTER_SIZE = 25          # render_quote_cards.hero() 里 footer 的字号
 FOOTER_UP = 60            # footer 距主画面底部的距离
 
@@ -65,10 +67,12 @@ def main():
     ap.add_argument("--logo-dir", default=None,
                     help="品牌素材目录；默认先找 ~/Developer/ffdy-brand，没有就用仓库自带 assets/brand")
     ap.add_argument("--spec", help="读 meta.footer 用于定位字标；不给就用 --footer")
+    ap.add_argument("--render", help="渲染器写出的 render.json（版式真源）；"
+                                     "默认自动找源图同目录的 render.json")
     ap.add_argument("--footer", default="", help="直接给 footer 文案（覆盖 --spec）")
     # 版式参照（要和渲染时一致，否则锚点算不准）
-    ap.add_argument("--margin", type=int, default=56)
-    ap.add_argument("--hero-fraction", type=float, default=0.362)
+    ap.add_argument("--margin", type=int, default=None)
+    ap.add_argument("--hero-fraction", type=float, default=None)
     # 图标
     ap.add_argument("--icon-h", type=int, default=96)
     ap.add_argument("--ink", choices=["white", "black"], default="black")
@@ -88,6 +92,17 @@ def main():
     a = ap.parse_args()
 
     base = Image.open(a.src).convert("RGB")
+
+    # 版式参数一律以渲染器写出的 render.json 为准，命令行显式传的才覆盖它。
+    # 两边各存一份默认值时，改了 --hero-fraction 只改渲染那侧，字标就飘了。
+    rp = Path(a.render) if a.render else Path(a.src).parent / "render.json"
+    R = json.load(open(rp, encoding="utf-8")) if rp.exists() else {}
+    margin = a.margin if a.margin is not None else R.get("margin", 56)
+    hero_frac = a.hero_fraction if a.hero_fraction is not None else R.get("hero_fraction", 0.362)
+    hero_h = R.get("hero_h") or round(base.height * hero_frac)
+    f_size, f_up = R.get("footer_size", FOOTER_SIZE), R.get("footer_up", FOOTER_UP)
+    hero_text = R.get("hero_text", True)
+    src_note = f"render.json({rp.parent.name}/)" if R else "内置默认值"
     if a.logo_dir:
         L = Path(a.logo_dir)
     else:                                   # 本机品牌目录优先，clone 下来的机器回落到仓库自带
@@ -100,8 +115,8 @@ def main():
     # —— 图标：锚版式左边距
     icon = ink_crop(L / "cat-circle.webp")
     icon = icon.resize((round(a.icon_h * icon.width / icon.height), a.icon_h), Image.LANCZOS)
-    ix = a.margin if a.x < 0 else a.x
-    iy = a.margin if a.y < 0 else a.y
+    ix = margin if a.x < 0 else a.x
+    iy = margin if a.y < 0 else a.y
     stamp(base, line_alpha(icon), (ix, iy), RGB[a.ink], a.halo, a.blur, a.spread)
 
     # —— 字标：@ + 飞飞豆芽
@@ -122,23 +137,30 @@ def main():
         footer = (json.load(open(a.spec, encoding="utf-8")).get("meta") or {}).get("footer", "")
 
     if a.word_x >= 0 and a.word_y >= 0:
-        wx, wy = a.word_x, a.word_y
+        wx, wy, anchor = a.word_x, a.word_y, "手动坐标"
+    elif not hero_text or not footer:
+        # --no-hero-text 的版式主画面上根本没有 footer 那行，锚上去会落进字幕条里。
+        # 退到主画面左下角，与图标同一条左边距。
+        wx = margin if a.word_x < 0 else a.word_x
+        wy = hero_h - a.word_h - margin if a.word_y < 0 else a.word_y
+        anchor = "主画面无 footer 行，退到左下角"
     else:
-        hero_h = round(base.height * a.hero_fraction)
-        fy = hero_h - FOOTER_UP                       # render_quote_cards 里 footer 的 y
-        ff = ImageFont.truetype(LATIN, FOOTER_SIZE)
-        fb = ff.getbbox(footer or "x")
-        fw = ImageDraw.Draw(base).textlength(footer, font=ff) if footer else 0
+        fy = hero_h - f_up                            # render_quote_cards 里 footer 的 y
+        ff = ImageFont.truetype(LATIN, f_size)
+        fb = ff.getbbox(footer)
+        fw = ImageDraw.Draw(base).textlength(footer, font=ff)
         # 垂直：字标墨迹中心对齐 footer 墨迹中心
         f_top, f_bot = fy + fb[1], fy + fb[3]
-        wx = a.margin + round(fw) + a.word_gap if a.word_x < 0 else a.word_x
+        wx = margin + round(fw) + a.word_gap if a.word_x < 0 else a.word_x
         wy = round((f_top + f_bot) / 2 - a.word_h / 2) if a.word_y < 0 else a.word_y
+        anchor = f"footer 右侧+{a.word_gap} 「{footer}」"
 
     stamp(base, lock, (wx, wy), RGB[a.word_ink], a.word_halo, a.blur, a.spread)
     base.save(a.out, quality=93, subsampling=0)
-    print(f"完成: {a.out}\n  图标 {icon.width}x{icon.height} @({ix},{iy}) {a.ink} halo={a.halo}"
-          f"\n  字标 {lock.width}x{lock.height} @({wx},{wy}) {a.word_ink}"
-          f"  锚点=footer右侧+{a.word_gap}" + (f' 「{footer}」' if footer else ' (无 footer，退化到边距)'))
+    print(f"完成: {a.out}\n  版式来源 {src_note}: margin={margin} hero_h={hero_h} "
+          f"hero_text={hero_text}"
+          f"\n  图标 {icon.width}x{icon.height} @({ix},{iy}) {a.ink} halo={a.halo}"
+          f"\n  字标 {lock.width}x{lock.height} @({wx},{wy}) {a.word_ink}  锚点={anchor}")
 
 
 if __name__ == "__main__":
