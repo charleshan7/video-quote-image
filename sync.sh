@@ -7,6 +7,7 @@
 # 本仓库只发布其中的金句长图这一支，所以这里是**选择性抽取**，不是整目录 rsync。
 # 平时改事实源，改完跑这个；不要直接改仓库副本，会被下次同步覆盖。
 set -euo pipefail
+DRY=0; [ "${1:-}" = "--dry-run" ] && { DRY=1; shift; }
 SRC="$HOME/.agents/skills/video-to-social"
 cd "$(dirname "$0")"
 [ -f "$SRC/references/quote-image.md" ] || { echo "找不到事实源：$SRC/references/quote-image.md"; exit 1; }
@@ -19,8 +20,7 @@ import sys, pathlib
 src = pathlib.Path(sys.argv[1])
 t = (src / "references/quote-image.md").read_text()
 
-t = t.replace("[native-subtitle.md](native-subtitle.md)",
-              "`native-subtitle-quote-image`（裁原帧，另一个 repo）")
+t = t.replace("[native-subtitle.md](native-subtitle.md)", "`native-subtitle-quote-image`")
 t = t.replace("[quote-image.md](quote-image.md)", "本文")
 t = t.replace(
     "- `<SKILL_DIR>` 与 venv 的约定见 [SKILL.md](../SKILL.md)。",
@@ -50,5 +50,10 @@ cp "$SRC/requirements.txt" requirements.txt
 
 git add -A
 git diff --cached --quiet && { echo "没有变化"; exit 0; }
+if [ "$DRY" = 1 ]; then
+  echo "── dry-run：以下是抽取结果，未提交未推送 ──"
+  git --no-pager diff --cached
+  exit 0
+fi
 git commit -m "${1:-sync: 从本机技能库同步}"
 git push
