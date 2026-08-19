@@ -3,6 +3,7 @@ name: video-quote-image
 description: 把长视频（访谈、播客、演讲、纪录片）做成中文金句长图/语录图/字幕拼图时使用。本 skill 定义的是**编辑标准**——一套出几张、一张放几句、版式规格、翻译多轮校准——这套标准对"画面无硬字幕（文字按字幕轨重绘）"和"画面已烧录字幕（裁原帧）"两条渲染路径都适用。渲染路径：无硬字幕走本 skill 的脚本；有硬字幕走 native-subtitle-quote-image，但选句、版式、校准仍照本文执行。也用于修改既有金句长图的选句、时间点、配色、句数和画面数量。
 ---
 
+
 # 金句长图
 
 **这个 skill 的价值不在渲染脚本，在下面三条编辑标准。** 脚本谁都能写，标准是拿几十张废图换来的。
@@ -267,7 +268,7 @@ prompt 里给全部原文段落 + 你的译文，让它只报"意思被改变"�
 
 ### 源片有硬字幕
 
-渲染改走 `native-subtitle-quote-image`（裁原帧，一个字不重绘），
+渲染改走 `native-subtitle-quote-image`（裁原帧，另一个 repo）（裁原帧，一个字不重绘），
 但**第一节的选句标准、第二节的句数与条高公式、第三节不适用**（文字来自原片，没有翻译环节）。
 选帧要点：取字幕稳定显示后的中间帧，不取刚出现或将消失的帧。
 
@@ -311,17 +312,16 @@ done
 
 ## 路径与依赖
 
+- macOS 专用：字体路径写死在系统自带的 STHeiti / Hiragino / Arial Unicode。
+- 可调样式：`--aspect` `--width` `--hero-fraction` `--cn-size` `--en-size` `--title-size`
+  `--stroke` `--band-focus` `--hero-focus`。输出目录非空直接报错，不覆盖已有成品。
+- 源片时长不足或分辨率低时仍输出 1440×1920，但**要说明这是放大尺寸**，不宣称提升清晰度。
 - `<SKILL_DIR>` = 本 `SKILL.md` 所在目录的绝对路径，不要假设工作目录就是它。
 - 依赖在自带 venv：命令一律用 `"<SKILL_DIR>/.venv/bin/python"`。缺失时重建：
 
   ```bash
   uv venv --python 3.11 "<SKILL_DIR>/.venv" && uv pip install --python "<SKILL_DIR>/.venv/bin/python" -r "<SKILL_DIR>/requirements.txt"
   ```
-
-- macOS 专用：字体路径写死在系统自带的 STHeiti / Hiragino / Arial Unicode。
-- 可调样式：`--aspect` `--width` `--hero-fraction` `--cn-size` `--en-size` `--title-size`
-  `--stroke` `--band-focus` `--hero-focus`。输出目录非空直接报错，不覆盖已有成品。
-- 源片时长不足或分辨率低时仍输出 1440×1920，但**要说明这是放大尺寸**，不宣称提升清晰度。
 
 ## 交付
 

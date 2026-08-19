@@ -99,5 +99,8 @@ uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requi
 
 ## 维护
 
-本机的事实源是 `~/.agents/skills/video-quote-image`（Claude Code 和 Codex 都软链到那里）。
-改完跑 `./sync.sh "说明"` 同步到本仓库并推送——**不要直接改仓库副本**，会被下次同步覆盖。
+本机的事实源是 `~/.agents/skills/video-to-social/references/quote-image.md`。
+2026-08-19 起，金句长图和原生字幕拼图、轮播流水线、公众号长文在本机合并成了一个技能
+`video-to-social`（四条产线共用下片 / 转录 / 定位精确帧 / 时间码可回溯的前半段），
+本仓库只发布其中的金句长图这一支。
+改完跑 `./sync.sh "说明"` 抽取并推送——**不要直接改仓库副本**，会被下次同步覆盖。
