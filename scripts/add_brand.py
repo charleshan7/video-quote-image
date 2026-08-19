@@ -140,4 +140,6 @@ def main():
           f"\n  字标 {lock.width}x{lock.height} @({wx},{wy}) {a.word_ink}"
           f"  锚点=footer右侧+{a.word_gap}" + (f' 「{footer}」' if footer else ' (无 footer，退化到边距)'))
 
-main()
+
+if __name__ == "__main__":
+    main()

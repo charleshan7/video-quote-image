@@ -30,13 +30,61 @@ try:
 except ImportError:
     FFMPEG = shutil.which("ffmpeg") or sys.exit("找不到 ffmpeg")
 
+# 字幕常写阿拉伯数字、ASR 常写英文单词，不对齐就会把 "2" vs "two" 报成数字不一致
+NUM = {"zero":"0","one":"1","two":"2","three":"3","four":"4","five":"5","six":"6",
+       "seven":"7","eight":"8","nine":"9","ten":"10","eleven":"11","twelve":"12",
+       "thirteen":"13","fourteen":"14","fifteen":"15","sixteen":"16","seventeen":"17",
+       "eighteen":"18","nineteen":"19","twenty":"20","thirty":"30","forty":"40",
+       "fifty":"50","sixty":"60","seventy":"70","eighty":"80","ninety":"90",
+       "hundred":"100","thousand":"1000","million":"1000000","billion":"1000000000"}
+
 NEG = {"not", "no", "never", "none", "nothing", "nobody", "cannot", "cant", "dont",
        "doesnt", "didnt", "wont", "wouldnt", "shouldnt", "isnt", "arent", "wasnt"}
 FILLER = {"uh", "um", "uhh", "umm", "mm", "mhm", "hmm", "ah", "oh", "er", "eh"}
 
 
 def norm(text):
-    return re.sub(r"[^\w\s']", " ", text.lower()).split()
+    return [NUM.get(w, w) for w in re.sub(r"[^\w\s']", " ", text.lower()).split()]
+
+
+def contains(hay, needle):
+    """needle 是否作为连续片段出现在 hay 里。"""
+    if not needle:
+        return False
+    return any(hay[i:i + len(needle)] == needle for i in range(len(hay) - len(needle) + 1))
+
+
+def verify(video, seg, rt, i1, i2, at, j1, j2, pad, cmds, workdir):
+    """对高危分歧加宽窗口重听，判定是截断假阳性还是真分歧。
+
+    实测：窄窗口下 whisper 会把边界词吃掉或听岔，加宽到 30 秒往往自己就纠回来了。
+    cmds 可以给多条（不同引擎），任一条支持字幕读法就判字幕正确。
+    """
+    wav = Path(workdir) / f"verify-{seg['id']}.wav"
+    cut(video, max(0.0, seg["t"] - pad), pad * 2, wav)
+    ctx = 3
+    srt_phrase = rt[max(0, i1 - ctx):i2 + ctx]
+    asr_phrase = (rt[max(0, i1 - ctx):i1] + at[j1:j2] + rt[i2:i2 + ctx])
+    votes = []
+    for cmd in cmds:
+        stem = wav.with_suffix("")
+        r = subprocess.run(cmd.replace("{wav}", str(wav)).replace("{stem}", str(stem)),
+                           shell=True, capture_output=True, text=True)
+        txt = stem.with_suffix(".txt")
+        wide = norm(txt.read_text(encoding="utf-8") if txt.exists() else r.stdout)
+        if txt.exists():
+            txt.unlink()
+        if contains(wide, srt_phrase):
+            votes.append("字幕")
+        elif contains(wide, asr_phrase):
+            votes.append("识别")
+        else:
+            votes.append("存疑")
+    if votes.count("字幕") > votes.count("识别"):
+        return "已复核-字幕正确", f"加宽到 {pad*2:.0f}s 重听 {votes}，支持字幕读法"
+    if votes.count("识别") > votes.count("字幕"):
+        return "确认字幕有误", f"加宽到 {pad*2:.0f}s 重听 {votes}，字幕这处是识别错误"
+    return "仍存疑", f"加宽重听 {votes}，两种读法都没稳定复现，回原音频人工听"
 
 
 def srt_window(cues, t0, t1):
@@ -100,6 +148,11 @@ def main():
                          "字幕会带进整条 cue 的尾巴而音频已经切断，系统性产生假阳性")
     ap.add_argument("--asr-cmd", help="第二家 ASR 的命令模板，占位符 {wav} {stem}")
     ap.add_argument("--diff-only", action="store_true", help="跳过切片和识别，只比对")
+    ap.add_argument("--verify-cmd", action="append", default=[],
+                    help="高危分歧的复核引擎命令模板，可给多条（不同厂商）；"
+                         "不给就用 --asr-cmd 加宽窗口重跑一次")
+    ap.add_argument("--verify-pad", type=float, default=15.0, help="复核窗口的半径秒数")
+    ap.add_argument("--no-verify", action="store_true", help="不自动复核高危分歧")
     ap.add_argument("--report", default="asr-xcheck.md")
     a = ap.parse_args()
 
@@ -162,15 +215,33 @@ def main():
             if lvl == "低":
                 low += 1
                 continue
-            rows.append({"id": s["id"], "img": s["img"], "t": s["t"], "lvl": lvl, "why": why,
+            rows.append({"seg": s, "rt": rt, "at": at, "span": (i1, i2, j1, j2),
+                         "id": s["id"], "img": s["img"], "t": s["t"], "lvl": lvl, "why": why,
                          "srt": " ".join(a_side) or "（无）", "asr": " ".join(b_side) or "（无）",
                          "ctx": " ".join(rt[max(0, i1 - 6):i2 + 6]), "en": s["en"], "cn": s["cn"]})
 
-    rows.sort(key=lambda r: (r["lvl"] != "高", r["id"]))
+    # 高危自动复核：加宽窗口 + 可选第二引擎，把截断假阳性和真分歧分开
+    vcmds = a.verify_cmd or ([a.asr_cmd] if a.asr_cmd else [])
+    if vcmds and not a.no_verify:
+        hi_rows = [r for r in rows if r["lvl"] == "高"]
+        for n, r in enumerate(hi_rows, 1):
+            print(f"\r复核高危 {n}/{len(hi_rows)}", end="", flush=True)
+            r["verdict"], r["vnote"] = verify(a.video, r["seg"], r["rt"], *r["span"][:2],
+                                              r["at"], *r["span"][2:], a.verify_pad, vcmds, out)
+            if r["verdict"] == "已复核-字幕正确":
+                r["lvl"] = "已排除"
+        if hi_rows:
+            print()
+
+    rows = [r for r in rows if r["lvl"] != "已排除"] + \
+           [r for r in rows if r["lvl"] == "已排除"]
+    rows.sort(key=lambda r: ({"高": 0, "中": 1, "已排除": 2}[r["lvl"]], r["id"]))
     hi = sum(1 for r in rows if r["lvl"] == "高")
+    cleared = sum(1 for r in rows if r["lvl"] == "已排除")
     lines = [f"# ASR 交叉校验\n",
              f"字幕 `{Path(a.subs).name}` vs 第二家识别，共 {len(segs)} 段，"
              f"分歧 {len(rows)} 处（高 {hi}），语气词噪声 {low} 处已滤除。"
+             + (f"另有 {cleared} 处高危经加宽重听判定为截断假阳性，已排除。" if cleared else "")
              + (f"\n\n⚠️ {missing} 段没拿到识别结果。" if missing else "") + "\n",
              "**高 = 否定词/数字/专有名词不一致，会改变意思，必须回原音频听。**\n"]
     for r in rows:
@@ -181,8 +252,11 @@ def main():
                   f"- 上下文: …{r['ctx']}…",
                   f"- 图上英文: {r['en']}",
                   f"- 图上中文: {r['cn']}"]
+        if r.get("vnote"):
+            lines.append(f"- **复核: {r['verdict']}** — {r['vnote']}")
     Path(a.report).write_text("\n".join(lines), encoding="utf-8")
     print(f"→ {a.report}：{len(segs)} 段，分歧 {len(rows)} 处（高 {hi}），噪声滤除 {low} 处")
 
 
-main()
+if __name__ == "__main__":
+    main()
