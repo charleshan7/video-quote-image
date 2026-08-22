@@ -55,9 +55,9 @@ def contains(hay, needle):
 
 
 def verify(video, seg, rt, i1, i2, at, j1, j2, pad, cmds, workdir):
-    """对高危分歧加宽窗口重听，判定是截断假阳性还是真分歧。
+    """对高危分歧加宽窗口复核，判定是截断假阳性还是真分歧。
 
-    实测：窄窗口下 whisper 会把边界词吃掉或听岔，加宽到 30 秒往往自己就纠回来了。
+    实测：窄窗口下 whisper 会把边界词吃掉或识别错误，加宽到 30 秒往往自己就纠回来了。
     cmds 可以给多条（不同引擎），任一条支持字幕读法就判字幕正确。
     """
     wav = Path(workdir) / f"verify-{seg['id']}.wav"
@@ -83,10 +83,10 @@ def verify(video, seg, rt, i1, i2, at, j1, j2, pad, cmds, workdir):
         else:
             votes.append("存疑")
     if votes.count("字幕") > votes.count("识别"):
-        return "已复核-字幕正确", f"加宽到 {pad*2:.0f}s 重听 {votes}，支持字幕读法"
+        return "已复核-字幕正确", f"加宽到 {pad*2:.0f}s 识别 {votes}，支持字幕读法"
     if votes.count("识别") > votes.count("字幕"):
-        return "确认字幕有误", f"加宽到 {pad*2:.0f}s 重听 {votes}，字幕这处是识别错误"
-    return "仍存疑", f"加宽重听 {votes}，两种读法都没稳定复现，回原音频人工听"
+        return "确认字幕有误", f"加宽到 {pad*2:.0f}s 识别 {votes}，字幕这处是识别错误"
+    return "仍存疑", f"加宽识别 {votes}，两种读法都没稳定复现，进入结构化约束裁决"
 
 
 def srt_window(cues, t0, t1):
@@ -243,9 +243,9 @@ def main():
     lines = [f"# ASR 交叉校验\n",
              f"字幕 `{Path(a.subs).name}` vs 第二家识别，共 {len(segs)} 段，"
              f"分歧 {len(rows)} 处（高 {hi}），语气词噪声 {low} 处已滤除。"
-             + (f"另有 {cleared} 处高危经加宽重听判定为截断假阳性，已排除。" if cleared else "")
+             + (f"另有 {cleared} 处高危经加宽识别判定为截断假阳性，已排除。" if cleared else "")
              + (f"\n\n⚠️ {missing} 段没拿到识别结果。" if missing else "") + "\n",
-             "**高 = 否定词/数字/专有名词不一致，会改变意思，必须回原音频听。**\n"]
+             "**高 = 否定词/数字/专有名词不一致，会改变意思，必须进入结构化约束裁决。**\n"]
     for r in rows:
         lines += [f"\n## [{r['lvl']}] {r['id']} · {r['img']} · {int(r['t'])//60:02d}:{int(r['t'])%60:02d}"
                   + (f" — {r['why']}" if r["why"] else ""),

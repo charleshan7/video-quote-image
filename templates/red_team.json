@@ -1,0 +1,18 @@
+{
+  "status": "completed",
+  "risk_flags": ["politics", "numbers"],
+  "rows": [
+    {
+      "quote_id": "01-01",
+      "risk_tags": ["politics"],
+      "source_en": "",
+      "current_cn": "",
+      "challenge": "这句是否把说话人的观点写成了独立事实？是否丢失主语、否定、限定语或因果范围？",
+      "evidence": ["source_time", "source_subs", "asr_report"],
+      "decision": "retain",
+      "revision": "",
+      "reviewer": "",
+      "reviewed_at": ""
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "source_url": "",
+  "download_mode": "direct",
+  "format_selector": "bestvideo*+bestaudio/best",
+  "quality_rank": "best_available",
+  "is_best_available": true,
+  "media_path": "source.mkv",
+  "container": "mkv",
+  "file_sha256": "",
+  "duration_seconds": 0,
+  "file_size_bytes": 0,
+  "format_size_bytes": 0,
+  "format_bitrate": 0,
+  "video_streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "",
+      "width": 0,
+      "height": 0,
+      "bit_rate": 0,
+      "avg_frame_rate": ""
+    }
+  ],
+  "audio_streams": [
+    {
+      "codec_type": "audio",
+      "codec_name": "",
+      "sample_rate": "",
+      "channels": 0,
+      "bit_rate": 0
+    }
+  ],
+  "yt_dlp_format_id": "",
+  "yt_dlp_requested_formats": [],
+  "yt_dlp_ext": "",
+  "yt_dlp_protocol": ""
+}

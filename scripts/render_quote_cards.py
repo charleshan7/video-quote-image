@@ -24,9 +24,9 @@ except ImportError:
         sys.exit("找不到 ffmpeg；请安装 ffmpeg 或 imageio-ffmpeg")
 
 # macOS 自带中日韩字体；换平台改这里
-CJK_BOLD = "/System/Library/Fonts/STHeiti Medium.ttc"
-CJK_REG = "/System/Library/Fonts/Hiragino Sans GB.ttc"
-LATIN = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
+CJK_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf"
+CJK_REG = "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf"
+LATIN = "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
 
 # 主画面 footer 那行的版式：add_brand.py 靠它把字标锚到 footer 右侧，
 # 改这里要同步 render.json（渲染时自动写出，不用手抄）
@@ -147,8 +147,12 @@ def auto_darken(img, strength, target, box):
     return Image.blend(out, Image.new("RGB", out.size, (0, 0, 0)), alpha)
 
 
+RENDER_WARNINGS = []
+
+
 def warn(msg):
-    print(f"\u26a0\ufe0f  {msg}", file=sys.stderr)
+    RENDER_WARNINGS.append(msg)
+    print(f"⚠️  {msg}", file=sys.stderr)
 
 
 def hhmm(t):
@@ -379,6 +383,7 @@ def main():
         "hero_fraction": args.hero_fraction, "margin": args.margin,
         "hero_text": cfg["hero_text"], "footer": meta.get("footer", ""),
         "footer_size": FOOTER_SIZE, "footer_up": FOOTER_UP,
+        "warnings": RENDER_WARNINGS,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
 
 

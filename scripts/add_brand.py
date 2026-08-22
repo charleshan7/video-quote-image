@@ -15,7 +15,7 @@ import argparse, json
 from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-LATIN = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"   # 同 render_quote_cards
+LATIN = "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"   # Linux 可用英文字体
 # 下面两个只是兜底：正常情况下版式参数从渲染器写出的 render.json 读，
 # 手抄常量会在改 --hero-fraction 后悄悄错位。
 FOOTER_SIZE = 25          # render_quote_cards.hero() 里 footer 的字号

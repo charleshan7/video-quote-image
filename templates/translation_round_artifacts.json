@@ -1,0 +1,94 @@
+{
+  "round_0_asr_crosscheck": {
+    "round": 0,
+    "status": "completed",
+    "artifact": "audit/review_asr_xcheck.json",
+    "quote_count": 0,
+    "rows": [
+      {
+        "quote_id": "01-01",
+        "source_en": "exact primary subtitle text",
+        "second_source": "independent ASR text and engine metadata",
+        "severity": "low|medium|high",
+        "discrepancies": [],
+        "adjudication": "retain|revise|stop",
+        "changed": false
+      }
+    ]
+  },
+  "round_1_self_check": {
+    "round": 1,
+    "status": "completed",
+    "artifact": "audit/round1_self_check.json",
+    "quote_count": 0,
+    "rows": [
+      {
+        "quote_id": "01-01",
+        "source_en": "",
+        "current_cn": "",
+        "checks": {
+          "subject": "pass|revise",
+          "person": "pass|revise",
+          "negation": "pass|revise",
+          "quantity": "pass|revise",
+          "scope": "pass|revise",
+          "causality": "pass|revise",
+          "tone": "pass|revise",
+          "terms": "pass|revise"
+        },
+        "adjudication": "retain|revise|stop",
+        "changed": false
+      }
+    ]
+  },
+  "round_2_mechanical_diff": {
+    "round": 2,
+    "status": "completed",
+    "artifact": "audit/round2_mechanical_diff.json",
+    "quote_count": 0,
+    "rows": [
+      {
+        "quote_id": "01-01",
+        "source_en": "",
+        "current_cn": "",
+        "diff": {
+          "subject": "same|different",
+          "negation": "same|different",
+          "quantity": "same|different",
+          "modality": "same|different",
+          "scope": "same|different",
+          "terms": "same|different",
+          "causality": "same|different"
+        },
+        "adjudication": "retain|revise|stop",
+        "changed": false
+      }
+    ]
+  },
+  "round_3_structured_adjudication": {
+    "round": 3,
+    "status": "completed",
+    "artifact": "audit/round3_adjudication.json",
+    "quote_count": 0,
+    "rows": [
+      {
+        "quote_id": "01-01",
+        "source_en": "",
+        "current_cn": "",
+          "evidence_basis": ["round0_asr", "round1_self_check", "round2_mechanical_diff"],
+        "claims": {
+          "subject": "",
+          "negation": "",
+          "quantity": "",
+          "modality": "",
+          "scope": "",
+          "terms": [],
+          "causality": "",
+          "source_time": 0
+        },
+        "adjudication": "retain|revise|stop",
+          "changed": false
+      }
+    ]
+  }
+}
