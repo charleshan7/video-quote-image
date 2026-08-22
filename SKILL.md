@@ -183,7 +183,9 @@ description: 把长视频（访谈、播客、演讲、纪录片）做成中文�
 只校验**入选的那几十句**，不用重跑整集：
 
 ```bash
-"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/asr_crosscheck.py" VIDEO   --spec spec.json --subs SUBS.srt --out-dir asr-xcheck --report asr-xcheck.md   --asr-cmd 'whisper-cli -m ~/.cache/whisper-cpp/ggml-large-v3-turbo-q5_0.bin -f {wav} -l en -otxt -of {stem} -np'
+"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/asr_crosscheck.py" VIDEO \
+  --spec spec.json --subs SUBS.srt --out-dir asr-xcheck --report asr-xcheck.md \
+  --asr-cmd 'whisper-cli -m ~/.cache/whisper-cpp/ggml-large-v3-turbo-q5_0.bin -f {wav} -l en -otxt -of {stem} -np'
 ```
 
 **不绑定任何厂商。** `--asr-cmd` 是命令模板，占位符 `{wav}`（输入）和 `{stem}`（输出前缀，
@@ -195,45 +197,67 @@ description: 把长视频（访谈、播客、演讲、纪录片）做成中文�
 
 **高危会自动复核**：脚本把该句加宽到 30 秒重跑 ASR；这一步只筛掉截断假阳性，不能直接替换字幕或作翻译润色。判定为截断假阳性的直接排除，报告里单列；其余差异进入结构化约束裁决。想让不同厂商投票就多给几条 `--verify-cmd`（可重复），不给就用 `--asr-cmd` 加宽重跑；`--no-verify` 关掉。
 
-#### 本地原始 Whisper 备用路径
+#### 默认第二来源：本地 openai-whisper
 
-云端 ASR 不可用、素材不宜上传，或需要可复现的第二来源时，优先使用**原始 `openai-whisper` 本地实现**。这里的“本地 Whisper”特指 OpenAI 原始 Python 实现，不等同于 `whisper.cpp` 或 `faster-whisper`；三者可使用同一系列模型权重，但推理引擎不同。
+**第二来源默认走本地，不出机器。** 这里的"本地 Whisper"特指 OpenAI 原始 Python 实现，
+不等同于 `whisper.cpp` 或 `faster-whisper`——三者可以用同一系列权重，但推理实现不同。
 
-先在技能 venv 安装可选依赖；不要把大型 PyTorch 依赖塞入默认渲染依赖：
+先在技能 venv 装可选依赖；不要把大型 PyTorch 依赖塞进默认渲染依赖：
 
 ```bash
 uv pip install --python "<SKILL_DIR>/.venv/bin/python" openai-whisper
 ```
 
-只复核入选金句时，使用宽音频窗口，避免切断上下文：
+只复核入选金句时，用宽音频窗口，避免切断上下文：
 
 ```bash
-"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/local_whisper_asr.py" VIDEO \\
-  --spec spec.json --out-dir asr-xcheck --context 20 \\
+"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/local_whisper_asr.py" VIDEO \
+  --spec spec.json --out-dir asr-xcheck --context 20 \
   --model base.en --language en --device cpu
 ```
 
-脚本会先把视频转成 16 kHz 单声道 WAV，再按 `spec.json` 的 `time` 合并窗口；输出 `asr_metadata.json`、`asr_segments.json` 和带**绝对时间码**的 `asr_transcript.srt`。元数据必须记录 `engine`、`model`、`language`、`device`、`fp16`、窗口起止时间和音频来源。若需全片模式，不传 `--spec` 或 `--window`，但必须确认计算资源和磁盘空间。
+脚本先把视频转成 16 kHz 单声道 WAV，再按 `spec.json` 的 `time` 合并窗口；输出 `asr_metadata.json`、`asr_segments.json` 和带**绝对时间码**的 `asr_transcript.srt`。元数据必须记录 `engine`、`model`、`language`、`device`、`fp16`、窗口起止时间和音频来源。若需全片模式，不传 `--spec` 或 `--window`，但必须先确认算力和磁盘。
 
-本地脚本只生成第二来源 ASR 文本，不负责差异裁决。完成后要把 ASR 文本与官方/平台字幕逐句比较，按“语义、数字/数量、否定/情态、专名/术语、分段/标点、时间边界”分类；`semantic_discrepancies` 和实际修改数量必须进入交付审计。不得把文本对齐或加宽识别写成音频已被逐句回听。
+本地脚本只生成第二来源文本，不负责差异裁决。完成后把 ASR 文本与主字幕逐句比较，按"语义、数字/数量、否定/情态、专名/术语、分段/标点、时间边界"分类；`semantic_discrepancies` 和实际修改数量必须进入交付审计。**不得把文本对齐或加宽识别写成"音频已被逐句回听"。**
 
-若本地 Whisper 安装或运行失败，依次考虑已配置的其他 ASR 或用户提供字幕；若没有第二英文来源，或关键差异无法通过第二来源、时间边界和结构化证据收敛，**停止最终发布，不要把官方字幕稿伪装成已交叉验证**。
+#### 两路引擎必须写进审计，而且架构不能同族
+
+**这是硬门禁，`preflight.py` 会机器判定，不接受口头声明。** `translation_audit.json` 必须记录：
+
+```json
+{
+  "primary_source_engine": "youtube-auto-captions",
+  "second_source_engine": "openai-whisper",
+  "independent_architecture": true
+}
+```
+
+三个字段缺任一项，`--status final` 直接退出非零。**而且 `independent_architecture: true` 不是免死金牌**——脚本会把两个引擎名归一到架构族（whisper / elevenlabs-scribe / google-asr / deepgram / assemblyai），同族即判失败：
+
+```
+primary and second ASR share the whisper family: openai-whisper / whisper.cpp
+```
+
+**为什么卡这么死。** whisper 的错来自"语言模型按概率补词"，再挂一个 whisper 变体
+（哪怕 large-v3 对 turbo，编码器还是同一个）基本是白跑——它们会在同一处一起错，
+而报告会显示"两路一致"，比没有第二来源更危险。
+平台自动字幕（YouTube 用 Google 自家 ASR）对本地 whisper 是有效组合；
+本地 whisper 对 whisper.cpp 不是。**主字幕本身是 Whisper 转的时，本地 whisper 不能算第二票**，
+这种情况要么换引擎，要么按下面的可选路径上云端。
+
+#### 可选：ElevenLabs Scribe（云端，非默认）
+
+⚠️ **这条会把音频传出本机。** 默认不走；只在主字幕本身是 whisper 系、本地又找不到异构引擎时启用，且素材必须允许上传。
+
+`scripts/asr_elevenlabs.py` 是 Scribe 的适配器，训练数据和架构都与 whisper 不同，能构成有效的第二票——实测靠它翻案过一处 whisper 三次都判"字幕正确"的分歧。想让多家投票就给多条 `--verify-cmd`（可重复）：
 
 ```bash
   --verify-cmd 'whisper-cli -m ~/.cache/whisper-cpp/ggml-large-v3-turbo-q5_0.bin -f {wav} -l en -otxt -of {stem} -np' \
   --verify-cmd 'python3 <SKILL_DIR>/scripts/asr_elevenlabs.py --wav {wav} --stem {stem} --lang eng'
 ```
 
-**第二家一定要选架构不同的。** whisper 的错来自"语言模型按概率补词"，
-再挂一个 whisper 变体（哪怕 large-v3 对 turbo，编码器还是同一个）基本是白跑——它们会在同一处一起错。
-`scripts/asr_elevenlabs.py` 是 ElevenLabs Scribe 的适配器，训练数据和架构都不同，
-这才构成有效的第二票。实测就靠它翻案过一处 whisper 三次都判"字幕正确"的分歧。
+计费参考：**约 67 字符/分钟音频**（2026-08 实测），免费档 10000 字符 ≈ 2.5 小时音频/月；一次 36 段全量校验约 8.4 分钟音频 ≈ 563 字符，占月额度 5.6%，全量跑也在免费额度内。超额计费默认关闭，额度用尽是报错不是扣钱，`--quota` 查余量。
 
-Scribe 计费：**约 67 字符/分钟音频**（2026-08 实测），免费档 10000 字符 ≈ 2.5 小时音频/月；
-一次 36 段的全量校验约 8.4 分钟音频 ≈ 563 字符，只占月额度 5.6%，**全量跑也在免费额度内**。
-超额计费默认关闭，额度用尽是报错不是扣钱。`--quota` 可随时查余量。
-
-⚠️ **Scribe 是云端 API，音频会离开本机。** 素材涉密时只能用本地 whisper。
 
 三个必须知道的坑：
 
@@ -366,6 +390,7 @@ ffmpeg 取不到那一秒就退回最后一帧，于是图上标着 45:00、画�
 5. 渲染（命令见版式 A）。
 6. **逐张看图**：文字不截断、同图不重复、标题没压到原片人名条、条间无黑边。
 7. 有问题只改 `quotes.json` 对应项（换 `match`、加 `hero_time`），重跑 4–5 步。
+8. **先只改第一张**，改定了再问用户要不要套到其余几张——不要整套重跑。
 
 ### 禁止的旧路径：native-subtitle-quote-image 原帧裁切
 

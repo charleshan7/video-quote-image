@@ -20,6 +20,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from media_tools import ffmpeg_exe, ffprobe_exe
+
 CN_RE = re.compile(r"[\u3400-\u9fff]")
 REQUIRED_PEOPLE = ["name", "person_type", "role", "source_url", "source_quote", "verified_at", "confidence"]
 REQUIRED_PACKAGE_TERMS = ["人物介绍", "首发标题", "封面大字", "轮播顺序", "评论区引导", "话题标签"]
@@ -35,6 +37,28 @@ RISK_TERM_MAP = {
     "numbers": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
     "strong_claims": ["always", "never", "must", "all", "none", "proves", "guaranteed", "绝对", "必然", "所有", "永远", "证明"],
 }
+
+
+ASR_FAMILIES = {
+    "whisper": ("whisper",),
+    "elevenlabs-scribe": ("scribe", "elevenlabs"),
+    "google-asr": ("google", "youtube-auto", "youtube auto"),
+    "deepgram": ("deepgram",),
+    "assemblyai": ("assemblyai",),
+}
+
+
+def asr_family(engine: str) -> str:
+    """Collapse an engine name to its architecture family.
+
+    openai-whisper, whisper.cpp and faster-whisper share an encoder, so pairing
+    them is not a second opinion — they fail together on the same word.
+    """
+    name = engine.strip().lower()
+    for family, markers in ASR_FAMILIES.items():
+        if any(marker in name for marker in markers):
+            return family
+    return name
 
 
 def load_json(path: Path, errors: list[str], label: str) -> dict[str, Any] | None:
@@ -57,7 +81,7 @@ def probe_video(video: Path, errors: list[str], warnings: list[str]) -> dict[str
     if not video.exists():
         errors.append(f"missing source video: {video}")
         return None
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,sample_rate,channels", "-of", "json", str(video)]
+    cmd = [ffprobe_exe(), "-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,sample_rate,channels", "-of", "json", str(video)]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
@@ -178,7 +202,7 @@ def check_translation(root: Path, audit: dict[str, Any] | None, spec: dict[str, 
     may not pass with missing rounds, completed_with_limitations, or narrative-only audits.
     `final` additionally requires heterogeneous ASR evidence.
     """
-    if not audit:
+    if audit is None:
         return
     if status == "draft":
         warnings.append("draft status skips the four-round delivery gate")
@@ -231,11 +255,25 @@ def check_translation(root: Path, audit: dict[str, Any] | None, spec: dict[str, 
         passes.append(f"translation round {number} complete: {len(rows)} quote rows")
     if not asr_report.exists():
         errors.append("missing quote-level ASR report")
-    same_asr_arch = audit.get("independent_architecture") is False
-    if same_asr_arch:
+    primary_engine = str(audit.get("primary_source_engine") or "").strip()
+    second_engine = str(audit.get("second_source_engine") or "").strip()
+    declared = audit.get("independent_architecture")
+    if declared is False:
         warnings.append("second ASR is explicitly same architecture/family")
-    if status == "final" and same_asr_arch:
-        errors.append("final status requires heterogeneous ASR evidence")
+    if status == "final":
+        # Fail closed: silence is not evidence. The engines must be named, and the
+        # family comparison is derived from those names so a wrong self-declaration
+        # cannot pass the gate on its own.
+        if declared is not True:
+            errors.append("final status requires translation_audit.independent_architecture=true")
+        for field, value in (("primary_source_engine", primary_engine), ("second_source_engine", second_engine)):
+            if not value:
+                errors.append(f"final status requires translation_audit.{field}")
+        if primary_engine and second_engine and asr_family(primary_engine) == asr_family(second_engine):
+            errors.append(
+                f"primary and second ASR share the {asr_family(primary_engine)} family: "
+                f"{primary_engine} / {second_engine}"
+            )
     if not errors:
         passes.append("four-round calibration gate satisfied")
 
@@ -387,7 +425,7 @@ def check_red_team(root: Path, spec: dict[str, Any] | None, red_team: Path, stat
         term = term.lower()
         if any(ord(ch) > 127 for ch in term) or term.isdigit() or "-" in term:
             return term in haystack
-        return re.search(r"\\b" + re.escape(term) + r"\\b", haystack) is not None
+        return re.search(r"\b" + re.escape(term) + r"\b", haystack) is not None
     detected = {flag for flag, terms in RISK_TERM_MAP.items() if any(contains(term) for term in terms)}
     if detected - explicit:
         errors.append(f"spec.meta.risk_flags missing detected triggers: {sorted(detected - explicit)}")
@@ -476,7 +514,8 @@ def main() -> int:
     ap.add_argument("--manifest", default="audit/release_manifest.json")
     ap.add_argument("--red-team", default="audit/red_team.json")
     ap.add_argument("--package", default="xiaohongshu_package.md")
-    ap.add_argument("--zip", default="../x_video_quote_cards_skill_review_v2.zip")
+    # No default: a stale ZIP from a previous delivery must never satisfy this gate.
+    ap.add_argument("--zip", help="delivery ZIP; required for reviewed/final")
     ap.add_argument("--no-report", action="store_true")
     args = ap.parse_args()
     root = Path(args.root).resolve()
@@ -505,7 +544,10 @@ def main() -> int:
     check_red_team(root, spec, rel(root, args.red_team), args.status, errors, passes)
     check_package(rel(root, args.package), errors, passes)
     if args.status != "draft":
-        check_zip(rel(root, args.zip), errors, passes)
+        if args.zip:
+            check_zip(rel(root, args.zip), errors, passes)
+        else:
+            errors.append("--zip is required for reviewed/final delivery")
     status = "BLOCKED" if errors else ("REVIEWED" if args.status == "reviewed" else "FINAL_ALLOWED")
     report = {"status": status, "requested_status": args.status, "root": str(root), "passes": passes, "warnings": warnings, "errors": errors, "summary": {"pass_count": len(passes), "warning_count": len(warnings), "error_count": len(errors)}}
     if not args.no_report:

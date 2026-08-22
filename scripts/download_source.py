@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse, hashlib, json, subprocess
 from pathlib import Path
 
+from media_tools import ffprobe_exe
+
 def sha256(path: Path) -> str:
     h=hashlib.sha256()
     with path.open('rb') as f:
@@ -36,7 +38,7 @@ def main():
         candidates=sorted(out.glob(args.basename+'.*'))
         media=next((p for p in candidates if p.suffix.lower() in {'.mkv','.mp4','.webm','.mov'}), None)
     if media is None: raise SystemExit('yt-dlp completed but merged media file was not found')
-    probe=run_json(['ffprobe','-v','error','-show_entries','format=duration,size,bit_rate:stream=index,codec_type,codec_name,width,height,bit_rate,avg_frame_rate,sample_rate,channels','-of','json',str(media)])
+    probe=run_json([ffprobe_exe(),'-v','error','-show_entries','format=duration,size,bit_rate:stream=index,codec_type,codec_name,width,height,bit_rate,avg_frame_rate,sample_rate,channels','-of','json',str(media)])
     streams=probe.get('streams',[])
     info_path=media.with_suffix(media.suffix+'.info.json')
     info={}

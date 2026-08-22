@@ -21,7 +21,7 @@ The following files are mandatory for `reviewed` and `final`. The four calibrati
 | `audit/spec.json` | `hero_time`, `hero_subject`, `hero_subject_role` (`interviewer`/`speaker`), hero identity sources, and every quote’s `time` and independently selected `frame_time`. |
 | `audit/quotes.json` | Candidate/source quote record before location and rendering. |
 | `audit/selection_audit.json` | `structure`, `planned_count`, `actual_count`, `core_quote_index`, `rejected_quotes`, and `count_reason` for every image. |
-| `audit/translation_audit.json` | Four rounds, source engines, structured-adjudication state, changes and limitations. Every round must have `status=completed`, `artifact`, and `quote_count`. |
+| `audit/translation_audit.json` | Four rounds plus `primary_source_engine`, `second_source_engine` and `independent_architecture`, structured-adjudication state, changes and limitations. Every round must have `status=completed`, `artifact`, and `quote_count`. |
 | `audit/review_asr_xcheck.md` or equivalent | Quote-level second-source comparison and discrepancy classification for round 0. |
 | `audit/round1_self_check.json` | Exactly one row per quote with `source_en`, `current_cn`, `checks`, and `adjudication`. |
 | `audit/round2_mechanical_diff.json` | Exactly one row per quote with `source_en`, `current_cn`, `diff`, and `changed`. |
@@ -51,7 +51,7 @@ The primary subtitle source and second ASR source are different roles. Never pas
 
 ## Hard-stop semantics
 
-`preflight.py` exits non-zero for missing evidence, missing or non-best-quality download manifest, missing streams, bad duration, invalid quote structure, invalid hero role, missing hero identity evidence, fewer than eight hero candidates, time/frame-time collapse, unmatched primary subtitle text, invalid dimensions, renderer warnings, missing render metadata, incomplete people records, incomplete publication packaging, missing frame audit, missing release manifest, artifact hash mismatch, missing triggered red-team audit, corrupt ZIP, **any missing or incomplete one of rounds 0–3**, or any missing quote-level row in the four round artifacts. A `final` request additionally fails when the audit explicitly reports that the ASR second source uses the same architecture/family, or when the structured adjudication artifact is incomplete. A `reviewed` request may pass only when all four rounds, the release integration manifest and any triggered red-team audit are complete; ASR limitations may remain explicit warnings in the report and user-facing delivery message.
+`preflight.py` exits non-zero for a missing `--zip` on a non-draft delivery, missing evidence, missing or non-best-quality download manifest, missing streams, bad duration, invalid quote structure, invalid hero role, missing hero identity evidence, fewer than eight hero candidates, time/frame-time collapse, unmatched primary subtitle text, invalid dimensions, renderer warnings, missing render metadata, incomplete people records, incomplete publication packaging, missing frame audit, missing release manifest, artifact hash mismatch, missing triggered red-team audit, corrupt ZIP, **any missing or incomplete one of rounds 0–3**, or any missing quote-level row in the four round artifacts. A `final` request additionally fails when `translation_audit.json` omits `primary_source_engine`, `second_source_engine` or `independent_architecture: true`, when the two recorded engines resolve to the same architecture family (whisper / elevenlabs-scribe / google-asr / deepgram / assemblyai — `openai-whisper` against `whisper.cpp` is the same family and is rejected regardless of what the audit declares), or when the structured adjudication artifact is incomplete. Silence is not evidence: an absent declaration fails the gate rather than passing it. A `reviewed` request may pass only when all four rounds, the release integration manifest and any triggered red-team audit are complete; ASR limitations may remain explicit warnings in the report and user-facing delivery message.
 
 ## Command
 
@@ -59,7 +59,8 @@ The primary subtitle source and second ASR source are different roles. Never pas
 "<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/preflight.py" \
   --root DELIVERY_DIR \
   --video VIDEO \
-  --status reviewed
+  --status reviewed \
+  --zip DELIVERY.zip
 ```
 
-For a publication-grade delivery, use `--status final`. Treat a non-zero exit code as a stop signal; do not override it by editing the report text.
+`--zip` has no default, so a leftover archive from a previous delivery can never satisfy the gate. For a publication-grade delivery, use `--status final`. Treat a non-zero exit code as a stop signal; do not override it by editing the report text.

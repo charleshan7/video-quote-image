@@ -11,6 +11,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from media_tools import ffmpeg_exe, ffprobe_exe
+
 
 def parse_window(value):
     try:
@@ -49,7 +51,7 @@ def windows_from_spec(path, context):
 
 def run_ffmpeg(video, start, end, wav):
     subprocess.run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y",
         "-ss", f"{start:.3f}", "-i", str(video), "-t", f"{end-start:.3f}",
         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav)
     ], check=True)
@@ -93,7 +95,7 @@ def main():
         windows = merge_windows(args.window, 0.0)
     else:
         # Full-video mode is explicit: use the video duration reported by ffprobe.
-        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+        probe = subprocess.run([ffprobe_exe(), "-v", "error", "-show_entries",
                                 "format=duration", "-of", "default=nw=1:nk=1",
                                 str(args.video)], capture_output=True, text=True, check=True)
         windows = [(0.0, float(probe.stdout.strip()))]
