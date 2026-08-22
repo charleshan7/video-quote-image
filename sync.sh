@@ -25,37 +25,47 @@ command -v rsync >/dev/null 2>&1 || {
 
 cd "$ROOT"
 
-# 保留仓库专有的 README、版式示例和本同步脚本；其余 skill 内容以事实源为准。
-rsync -a --delete \
-  --exclude '.git/' \
-  --exclude '.venv/' \
-  --exclude '__pycache__/' \
-  --exclude 'README.md' \
-  --exclude 'docs/' \
-  --exclude 'sync.sh' \
-  "$SRC/" "$ROOT/"
-
-# 不把运行缓存、视频、图片成品或本地环境带入 skill 发布包。
-find "$ROOT" -type d -name '__pycache__' -prune -exec rm -rf {} +
-find "$ROOT" -type d -name '.venv' -prune -exec rm -rf {} +
-
-git add -A
-git diff --cached --quiet && {
-  echo "没有变化"
-  exit 0
-}
-
-if [ "$DRY" = 1 ]; then
-  echo "── dry-run：以下是同步结果，未提交未推送 ──"
-  git --no-pager diff --cached
-  exit 0
-fi
-
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$BRANCH" != "main" ]; then
   echo "当前分支是 $BRANCH，不是 main；为避免同步到错误分支，已停止。"
   exit 1
 fi
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "仓库存在未提交改动；先提交或清理后再同步，避免混入无关修改。"
+  exit 1
+fi
+
+RSYNC_ARGS=(
+  -a --delete
+  --exclude '.git/'
+  --exclude '.venv/'
+  --exclude '__pycache__/'
+  --exclude '.ruff_cache/'
+  --exclude 'README.md'
+  --exclude 'docs/'
+  --exclude 'sync.sh'
+  --exclude '.github/'
+)
+
+if [ "$DRY" = 1 ]; then
+  echo "── dry-run：只显示将发生的同步，不修改文件或暂存区 ──"
+  rsync "${RSYNC_ARGS[@]}" --dry-run --itemize-changes "$SRC/" "$ROOT/"
+  exit 0
+fi
+
+# 保留仓库专有的 README、版式示例和本同步脚本；其余 skill 内容以事实源为准。
+rsync "${RSYNC_ARGS[@]}" "$SRC/" "$ROOT/"
+
+# 不把运行缓存、视频、图片成品或本地环境带入 skill 发布包。
+find "$ROOT" -type d -name '__pycache__' -prune -exec rm -rf {} +
+find "$ROOT" -type d -name '.venv' -prune -exec rm -rf {} +
+
+git add -A -- . ':(exclude)README.md' ':(exclude)docs/**' ':(exclude)sync.sh' ':(exclude).github/**'
+git diff --cached --quiet && {
+  echo "没有变化"
+  exit 0
+}
 
 git commit -m "${1:-sync: 更新 video-quote-image skill}"
 git push -q origin "$BRANCH"

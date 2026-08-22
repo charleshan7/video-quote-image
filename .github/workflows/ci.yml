@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk fonts-dejavu-core rsync
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt ruff
+      - name: Environment doctor
+        run: python scripts/doctor.py
+      - name: Static checks
+        run: |
+          python -m compileall -q scripts
+          ruff check scripts tests
+          for file in schemas/*.json templates/*.json; do python -m json.tool "$file" >/dev/null; done
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v

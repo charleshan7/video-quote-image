@@ -1,102 +1,93 @@
 # video-quote-image
 
-把长视频（访谈、播客、演讲、纪录片）做成可直接发小红书 / 公众号的**中文金句长图**。
+把访谈、播客、演讲或纪录片制作成可核验的中文/双语金句长图和小红书发布包。
 
-**这里定义的是统一的真实帧重绘流程**：无论源片是否带烧录字幕，都以真实视频画面作背景，隐藏或覆盖原字幕后，重新排版英文原文与中文翻译；选句、版式规格、翻译校准和发布包装都照本 repo 的 `SKILL.md` 执行。
+本仓库的核心不是单一渲染脚本，而是把真实来源、时间码、翻译、人物、选帧、图片、发布文案和 ZIP 绑定到同一版本的交付契约。
 
-![版式](docs/layout.jpg)
+![版式示例](docs/layout.jpg)
 
-## 核心不是脚本，是编辑标准
+## 当前标准
 
-脚本谁都能写。这个 repo 真正的内容是 `SKILL.md` 里那三条标准——拿几十张废图换来的：
+Skill 采用五层标准：
 
-**一、选张与选句。** 一套 4–6 张；**一张放几句由论证结构决定，不套固定值**——断言+反转 3–4 句，
-完整论证 5–6 句，递进链条 7–8 句，超过 8 句要么在凑数要么该拆成两张（8 句也是条高的物理上限）。
-选句四条硬标准，外加一条核心句位置规则：**每组必须包含至少一句最强核心句，但位置不固定**；不要为了把核心句放在结尾而删掉其后的必要论证。
+1. 论证结构驱动的选题和选句。
+2. 跨平台字体、真实帧和烧录字幕处理明确的版式。
+3. 音频英文到中文的四轮逐句校准。
+4. 可核验的人物介绍和发布包装。
+5. Schema、SHA-256、ZIP 成员和风险红队组成的交付门禁。
 
-**二、版式规格。** 条高 = (1920 − 695) ÷ 句数，5句→245px / 7句→175px / 8句→153px；
-纯中文版行距全图统一 148px、主画面高由句数反推 `1920 − (句数−1)×148`（9 句时正好等于 16:9 满宽，
-横幅双人镜头只能用这个数）。都是公式，不是每次现调。
+完整入口见 [`SKILL.md`](SKILL.md)。它只保留路由和硬约束；详细规则按需放在 `references/`，JSON 契约位于 `schemas/`。
 
-**三、多轮校准，从音频到中文逐层交叉。** 平台自动字幕自带语音识别错误，而下游全把它当事实来源，
-所以第零轮先用**第二家 ASR** 重跑入选片段校验英文原文（`asr_crosscheck.py`，`--asr-cmd` 传任意引擎的命令，
-不绑厂商）；再走逐句自查 → 机械 diff → 结构化约束裁决。四轮缺一不可。
-自查抓不出的是这两类：引语的人称（说话人在"学别人说话"，写成「我们」意思整个翻转）、
-限定语和语气（删掉 `a lot of the safety talk is well-founded` 的前半句，就成了往人嘴里塞话）。
-
-另外两条技术判断：**时间点必须回字幕文件查**，手填的跟画面对不上；**默认不压暗**，
-七张压黑连起来像一堵黑墙，问题从来不是画面太亮而是文字对比度不够。
-
-## 用法
+## 最短受支持路径
 
 ```bash
-# 1. 定位真实时间点：把人工挑好的 quotes.json 编译成 spec.json
-.venv/bin/python scripts/locate_quotes.py SUBS.srt quotes.json -o spec.json
-
-# 2. 渲染
-.venv/bin/python scripts/render_quote_cards.py VIDEO --spec spec.json --out-dir output
-
-# 3. 整套叠品牌标识（每张都叠，不是只叠封面）
-for f in output/0*.jpg; do
-  .venv/bin/python scripts/add_brand.py "$f" --out "${f%.jpg}_带logo.jpg" --spec spec.json
-done
+uv venv --python 3.11 .venv
+uv pip install --python .venv/bin/python -r requirements.txt
+.venv/bin/python scripts/doctor.py
 ```
 
-`quotes.json` 里的 `match` 必须**照抄字幕原文片段**，脚本靠它回字幕定位：
-
-```json
-{
-  "meta": {"kicker": "SAM ALTMAN · INVEST LIKE THE BEST",
-           "footer": "Invest Like The Best · 2026.07.28 · 56min"},
-  "images": [
-    {"title": "权力集中，才是真正可怕的事",
-     "hero_time": 1085,
-     "quotes": [
-       {"match": "a lot of the safety talk is well-founded",
-        "cn": "很多安全担忧有道理，也有很多是想集中权力",
-        "en": "A lot of the safety talk is well-founded; a lot of it is people who want to concentrate power."}
-     ]}
-  ]
-}
-```
-
-## 版式
-
-1440×1920（3:4）。主画面占 36.2%，其余等分成字幕条，每条一句中文 + 一行英文 + 右下角时间码。
-
-| 元素 | 位置 |
-|---|---|
-| kicker / 标题 / 出处 | 主画面左下，左边距 56 |
-| 字幕条文字 | 左对齐，左边距 56，右下角时间码 |
-| 品牌图标 | 主画面左上角 `(56, 56)` |
-| `@` 字标 | footer 那行右端 + 28px，垂直居中对齐该行 |
-
-品牌标识的位置是**相对锚点**，不写死像素——换素材、改 footer 文案、调 `--margin`，标识自己跟着挪。
-
-## 目录
-
-```
-SKILL.md          技能定义（给 Claude Code / Codex 读的完整工作流与踩坑记录）
-scripts/
-  locate_quotes.py    回字幕定位真实时间点，quotes.json → spec.json
-  render_quote_cards.py  抽帧、排版、渲染长图和总览图
-  add_brand.py        叠品牌标识，位置用相对锚点
-  asr_crosscheck.py   ASR 交叉校验：切片 → 任意引擎重识别 → 与原字幕比对出报告
-assets/brand/     品牌素材（双猫圆环图标 + 字标，透明底）
-sync.sh           从本机技能库同步并推送
-requirements.txt  Pillow + imageio-ffmpeg
-```
-
-## 依赖
-
-macOS（字体路径写死在系统自带的 STHeiti / Hiragino / Arial Unicode），Python 3.11，ffmpeg。
+下载与来源证据：
 
 ```bash
-uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+.venv/bin/python scripts/download_source.py URL --out-dir PROJECT/source
 ```
 
-## 维护
+选句文件必须带稳定的 `image.id` 和 `quote_id`：
 
-本仓库同步的是 `video-quote-image` skill 的完整发布副本，包含 `SKILL.md`、校准与合规参考、脚本、模板和品牌素材。
-如需从本机事实源更新，设置 `VIDEO_QUOTE_IMAGE_SKILL_DIR` 指向本地 skill 目录后运行 `./sync.sh "说明"`；脚本会同步内容、提交并推送到当前分支。
-不要在仓库中保留 `.venv/`、缓存或项目成品；这些内容不属于 skill 发布包。
+```bash
+.venv/bin/python scripts/locate_quotes.py \
+  PROJECT/audit/source_subs.srt PROJECT/audit/quotes.json \
+  -o PROJECT/audit/spec.json
+```
+
+确认原片没有烧录字幕后渲染：
+
+```bash
+.venv/bin/python scripts/render_quote_cards.py PROJECT/source/source.mkv \
+  --spec PROJECT/audit/spec.json --out-dir PROJECT/images \
+  --render-json PROJECT/audit/render.json \
+  --source-subtitle-policy verified-absent \
+  --aspect 3:4 --width 1440 --hero-fraction 0.362
+```
+
+原片有底部烧录字幕时，应在原尺寸抽查后改用 `--source-subtitle-policy cropped --source-crop-bottom RATIO`。处理状态为 `unknown` 只能作为草稿。
+
+完成四轮校准、人物、选帧和发布包后：
+
+```bash
+.venv/bin/python scripts/build_release_manifest.py \
+  --root PROJECT --status final --version v1 --zip ../release-v1.zip
+
+.venv/bin/python scripts/preflight.py \
+  --root PROJECT --video source/source.mkv --status final --zip ../release-v1.zip
+```
+
+只有 preflight 退出 0、ZIP 成员哈希匹配，并且逐张查看过 1440×1920 原图，才能称为 reviewed/final。
+
+## 环境与 Manus
+
+Python 依赖不会安装系统字体或 `ffprobe`。`doctor.py` 会检查 Pillow、imageio-ffmpeg、jsonschema、yt-dlp、ffmpeg/ffprobe、curl、rsync 和跨平台字体。
+
+Manus 等 Linux 镜像如果预装 Noto CJK、FFmpeg 和 yt-dlp，可以直接通过检查；缺依赖时会明确停止，不会再静默生成方框字。需要本地 Whisper 时安装 `requirements-asr.txt`；需要由 venv 安装 yt-dlp 时安装 `requirements-tools.txt`。
+
+ElevenLabs 适配器默认使用 Scribe v2，并要求显式 `--allow-cloud`，因为音频会离开本机。Skill 不硬编码易变的价格和免费额度。
+
+## 测试
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+uvx ruff check scripts tests
+```
+
+CI 同时验证 Python 语法、JSON Schema/模板语法、VTT/SRT 时间定位、预检对账和运行环境。
+
+## 同步维护
+
+本机事实源是 `~/.agents/skills/video-quote-image`。仓库的 README、`docs/`、`.github/` 和 `sync.sh` 为仓库专有文件，其余内容由事实源同步。
+
+```bash
+./sync.sh --dry-run   # 只显示差异，不写文件、不暂存
+./sync.sh "说明"      # 同步、提交并推送 main
+```
+
+正式同步要求工作区干净，并且只暂存 Skill 内容，避免把 README 或其他人工修改混入自动提交。
