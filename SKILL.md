@@ -49,10 +49,10 @@ description: 把访谈、播客、演讲或纪录片制作成可核验的中文�
 
 ```bash
 uv venv --python 3.11 "<SKILL_DIR>/.venv"
-uv pip install --python "<SKILL_DIR>/.venv/bin/python" -r "<SKILL_DIR>/requirements.txt"
+uv pip install --python "<SKILL_DIR>/.venv/bin/python" -r "<SKILL_DIR>/requirements-tools.txt"
 ```
 
-需要本地 Whisper 时另装 `requirements-asr.txt`；需要由 venv 提供 yt-dlp 时装 `requirements-tools.txt`。`ffprobe` 和系统字体仍需由宿主环境提供。
+需要本地 Whisper 时另装 `requirements-asr.txt`。`requirements-tools.txt` 包含完整下载流水线所需的 yt-dlp；`ffprobe` 和系统字体仍需由宿主环境提供。
 
 ### 2. 下载并保存来源证据
 
