@@ -22,7 +22,7 @@ Skill 采用五层标准：
 
 ```bash
 uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
+uv pip install --python .venv/bin/python -r requirements-tools.txt
 .venv/bin/python scripts/doctor.py
 ```
 
@@ -68,7 +68,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 Python 依赖不会安装系统字体或 `ffprobe`。`doctor.py` 会检查 Pillow、imageio-ffmpeg、jsonschema、yt-dlp、ffmpeg/ffprobe、curl、rsync 和跨平台字体。
 
-Manus 等 Linux 镜像如果预装 Noto CJK、FFmpeg 和 yt-dlp，可以直接通过检查；缺依赖时会明确停止，不会再静默生成方框字。需要本地 Whisper 时安装 `requirements-asr.txt`；需要由 venv 安装 yt-dlp 时安装 `requirements-tools.txt`。
+Manus 等 Linux 镜像如果预装 Noto CJK、FFmpeg 和 yt-dlp，可以直接通过检查；缺依赖时会明确停止，不会再静默生成方框字。完整流水线安装 `requirements-tools.txt`；需要本地 Whisper 时再安装 `requirements-asr.txt`。
 
 ElevenLabs 适配器默认使用 Scribe v2，并要求显式 `--allow-cloud`，因为音频会离开本机。Skill 不硬编码易变的价格和免费额度。
 

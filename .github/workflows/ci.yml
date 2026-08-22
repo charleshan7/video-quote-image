@@ -9,15 +9,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk fonts-dejavu-core rsync
       - name: Install Python dependencies
-        run: pip install -r requirements.txt ruff
+        run: pip install -r requirements-tools.txt ruff
       - name: Environment doctor
         run: python scripts/doctor.py
       - name: Static checks
