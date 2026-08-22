@@ -7,7 +7,6 @@ transcript differences or perform translation review.
 import argparse
 import json
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -58,7 +57,7 @@ def run_ffmpeg(video, start, end, wav):
 
 
 def srt_time(seconds):
-    ms = int(round(seconds * 1000))
+    ms = round(seconds * 1000)
     h, ms = divmod(ms, 3600000)
     m, ms = divmod(ms, 60000)
     s, ms = divmod(ms, 1000)

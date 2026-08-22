@@ -1,0 +1,4 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["heroes", "images"],
+  "properties": {"heroes": {"type": "array", "items": {"type": "object", "required": ["image_id", "hero_subject", "hero_subject_role", "chosen_hero_time", "candidates"]}}, "images": {"type": "array", "items": {"type": "object", "required": ["image_id", "rows"], "properties": {"rows": {"type": "array", "items": {"type": "object", "required": ["quote_id", "chosen_frame_time", "candidates"]}}}}}}
+}

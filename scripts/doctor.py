@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Check runtime dependencies before starting a video-quote-image project."""
+from __future__ import annotations
+
+import argparse
+import importlib
+import importlib.metadata
+import json
+import shutil
+import sys
+
+from media_tools import assert_font_glyphs, ffmpeg_exe, ffprobe_exe, resolve_font
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--require-local-asr", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+    report = {"python": sys.version.split()[0], "ok": {}, "missing": {}}
+
+    for module in ("PIL", "imageio_ffmpeg", "jsonschema"):
+        try:
+            importlib.import_module(module)
+            distribution = {"PIL": "Pillow"}.get(module, module)
+            report["ok"][module] = importlib.metadata.version(distribution)
+        except Exception as exc:  # noqa: BLE001 - report import failure without crashing doctor
+            report["missing"][module] = str(exc)
+    if args.require_local_asr:
+        try:
+            importlib.import_module("whisper")
+            report["ok"]["whisper"] = "installed"
+        except Exception as exc:  # noqa: BLE001 - report optional ASR import failure
+            report["missing"]["whisper"] = str(exc)
+
+    for name, finder in (("ffmpeg", ffmpeg_exe), ("ffprobe", ffprobe_exe)):
+        try:
+            report["ok"][name] = finder()
+        except SystemExit as exc:
+            report["missing"][name] = str(exc)
+    for name in ("yt-dlp", "curl", "rsync"):
+        path = shutil.which(name)
+        (report["ok"] if path else report["missing"])[name] = path or "not on PATH"
+
+    for kind, sample in (("cjk_bold", "中文测试"), ("cjk_regular", "人物访谈"), ("latin", "Quote 123")):
+        try:
+            path = resolve_font(kind)
+            assert_font_glyphs(path, sample, kind)
+            report["ok"][kind] = path
+        except SystemExit as exc:
+            report["missing"][kind] = str(exc)
+
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        for name, value in report["ok"].items():
+            print(f"OK      {name}: {value}")
+        for name, value in report["missing"].items():
+            print(f"MISSING {name}: {value}")
+    return 1 if report["missing"] else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

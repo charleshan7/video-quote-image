@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Build the release integration manifest before packaging a quote-image delivery."""
 from __future__ import annotations
-import argparse, hashlib, json
+
+import argparse
+import hashlib
+import json
 from pathlib import Path
+
 
 def sha256(path: Path) -> str:
     h=hashlib.sha256()
@@ -23,9 +27,13 @@ def main():
     spec=json.loads((root/args.spec).read_text(encoding='utf-8'))
     images=sorted((root/'images').glob('0*.jpg'))
     artifact_paths=[
-        'source_download.json',args.spec,'audit/quotes.json','audit/selection_audit.json','audit/translation_audit.json',
-        'audit/source_subs.srt','audit/frame_audit.json','audit/render.json','xiaohongshu_package.md'
+        'source/source_download.json',args.spec,'audit/quotes.json','audit/selection_audit.json','audit/translation_audit.json',
+        'audit/source_subs.srt','audit/review_asr_xcheck.json','audit/people.json',
+        'audit/frame_audit.json','audit/render.json','xiaohongshu_package.md'
     ]
+    risk_flags=(spec.get('meta') or {}).get('risk_flags',[])
+    if risk_flags:
+        artifact_paths.append('audit/red_team.json')
     artifact_hashes={}
     for rel in artifact_paths:
         p=root/rel
@@ -38,6 +46,8 @@ def main():
         for p in branded:
             artifact_hashes[str(p.relative_to(root))]=sha256(p)
     quote_count=sum(len(i.get('quotes',[])) for i in spec.get('images',[]))
+    if len(images) != len(spec.get('images', [])):
+        raise SystemExit(f'image count {len(images)} != spec groups {len(spec.get("images", []))}')
     manifest={
         'version':args.version,
         'status':args.status,
@@ -45,7 +55,9 @@ def main():
         'quote_count':quote_count,
         'artifact_hashes':artifact_hashes,
         'release_zip':args.zip,
-        'risk_flags':(spec.get('meta') or {}).get('risk_flags',[]),
+        'risk_flags':risk_flags,
+        'image_files':[str(path.relative_to(root)) for path in images],
+        'branded_files':[str(path.relative_to(root)) for path in branded],
     }
     out=root/args.output
     out.parent.mkdir(parents=True,exist_ok=True)

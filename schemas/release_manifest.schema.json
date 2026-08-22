@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+  "required": ["version", "status", "image_count", "quote_count", "artifact_hashes", "release_zip"],
+  "properties": {"version": {"type": "string", "minLength": 1}, "status": {"enum": ["reviewed", "final"]}, "image_count": {"type": "integer", "minimum": 1}, "quote_count": {"type": "integer", "minimum": 1}, "artifact_hashes": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}, "release_zip": {"type": "string", "minLength": 1}}
+}

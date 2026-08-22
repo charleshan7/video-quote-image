@@ -1,0 +1,11 @@
+{
+  "primary_source_engine": "youtube-auto/google-asr",
+  "second_source_engine": "elevenlabs-scribe-v2",
+  "independent_architecture": true,
+  "rounds": [
+    {"round": 0, "status": "completed", "artifact": "audit/review_asr_xcheck.json"},
+    {"round": 1, "status": "completed", "artifact": "audit/round1_self_check.json"},
+    {"round": 2, "status": "completed", "artifact": "audit/round2_mechanical_diff.json"},
+    {"round": 3, "status": "completed", "artifact": "audit/round3_adjudication.json"}
+  ]
+}

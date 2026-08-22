@@ -1,117 +1,176 @@
 #!/usr/bin/env python3
-"""在字幕文件里定位每句金句的真实时间点，把 quotes.json 编译成渲染用的 spec.json。
+"""Locate selected quotes in SRT/WebVTT without inventing source timestamps."""
+from __future__ import annotations
 
-用途：视频画面里没有烧录字幕时，金句文字来自字幕轨，时间点必须回字幕里查，
-不能手填——手填的时间戳跟画面对不上，读者跳回原片会扑空。
-"""
 import argparse
+import html
 import json
 import re
-import sys
+import tempfile
+import unicodedata
+from dataclasses import dataclass
+from pathlib import Path
 
-CUE = re.compile(
-    r"(\d{1,2}:\d\d:\d\d[,.]\d+)\s*-->\s*[\d:,.]+\s*\n(.*?)(?=\n\s*\n|\Z)", re.S)
+TIMING = re.compile(
+    r"(?P<start>(?:\d{1,2}:)?\d{1,2}:\d{2}[,.]\d+)\s*-->\s*"
+    r"(?P<end>(?:\d{1,2}:)?\d{1,2}:\d{2}[,.]\d+)(?:\s+.*)?$"
+)
 
 
-def secs(ts):
-    h, m, rest = ts.split(":")
-    return int(h) * 3600 + int(m) * 60 + float(rest.replace(",", "."))
+@dataclass(frozen=True)
+class Cue:
+    start: float
+    end: float
+    text: str
 
 
-def load_cues(path):
-    """SRT / VTT 都能读；返回 [(秒, 小写文本)]。"""
-    raw = open(path, encoding="utf-8-sig").read()
-    cues = []
-    for ts, text in CUE.findall(raw):
-        line = " ".join(re.sub(r"<[^>]+>", "", text).split())
-        if line:
-            cues.append((secs(ts), line.lower()))
+def seconds(value: str) -> float:
+    parts = value.replace(",", ".").split(":")
+    if len(parts) == 2:
+        hours = 0
+        minutes, secs = parts
+    elif len(parts) == 3:
+        hours, minutes, secs = parts
+    else:
+        raise ValueError(f"invalid subtitle timestamp: {value}")
+    return int(hours) * 3600 + int(minutes) * 60 + float(secs)
+
+
+def normalize_text(value: str) -> str:
+    value = html.unescape(re.sub(r"<[^>]+>", " ", value))
+    value = unicodedata.normalize("NFKC", value).lower().replace("’", "'")
+    return " ".join(re.sub(r"[^\w']+", " ", value, flags=re.UNICODE).split())
+
+
+def load_cues(path: str | Path) -> list[Cue]:
+    raw = Path(path).read_text(encoding="utf-8-sig", errors="strict").replace("\r\n", "\n")
+    cues: list[Cue] = []
+    for block in re.split(r"\n\s*\n", raw):
+        lines = [line.strip("\ufeff") for line in block.splitlines()]
+        timing_index = next((i for i, line in enumerate(lines) if "-->" in line), None)
+        if timing_index is None:
+            continue
+        match = TIMING.fullmatch(lines[timing_index].strip())
+        if not match:
+            continue
+        text = normalize_text(" ".join(lines[timing_index + 1 :]))
+        if not text:
+            continue
+        start, end = seconds(match.group("start")), seconds(match.group("end"))
+        if end <= start:
+            raise SystemExit(f"字幕 cue 结束时间不大于开始时间：{lines[timing_index]}")
+        cues.append(Cue(start=start, end=end, text=text))
     if not cues:
-        sys.exit(f"没从 {path} 解析出任何字幕行")
+        raise SystemExit(f"没从 {path} 解析出任何 SRT/WebVTT 字幕行")
     return cues
 
 
-def build_index(cues):
-    """拼成一条长文本，并记录每个字符位置对应的时间，便于跨行匹配。"""
-    parts, index = [], []
-    for t, line in cues:
-        parts.append(line)
-        index.extend([t] * (len(line) + 1))
+def build_index(cues: list[Cue]) -> tuple[str, list[Cue]]:
+    parts: list[str] = []
+    index: list[Cue] = []
+    for cue in cues:
+        if parts:
+            index.append(cue)
+        parts.append(cue.text)
+        index.extend([cue] * len(cue.text))
     return " ".join(parts), index
 
 
-def find_time(flat, index, phrase, after=0.0):
-    needle = " ".join(phrase.lower().split())
-    pos = 0
+def find_cue(flat: str, index: list[Cue], phrase: str, after: float = 0.0) -> Cue | None:
+    needle = normalize_text(phrase)
+    if not needle:
+        return None
+    position = 0
     while True:
-        pos = flat.find(needle, pos)
-        if pos == -1:
+        position = flat.find(needle, position)
+        if position < 0:
             return None
-        t = index[min(pos, len(index) - 1)]
-        if t >= after:
-            return t
-        pos += 1
+        cue = index[min(position, len(index) - 1)]
+        if cue.start >= after:
+            return cue
+        position += 1
 
 
-def main():
+def atomic_write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        temporary = Path(handle.name)
+    temporary.replace(path)
+
+
+def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("subtitles", help="SRT 或 VTT 文件")
-    ap.add_argument("quotes", help="人工挑好的金句表 quotes.json")
+    ap.add_argument("subtitles", help="SRT 或 WebVTT 文件")
+    ap.add_argument("quotes", help="人工挑好的 quotes.json")
     ap.add_argument("-o", "--out", default="spec.json")
-    ap.add_argument("--settle", type=float, default=1.2,
-                    help="命中后往后挪多少秒取帧，避开句子刚出现的瞬间（默认 1.2）")
+    ap.add_argument(
+        "--settle", type=float, default=0.0,
+        help="显式从 cue 开始时间后移秒数；默认 0，不改变来源时间",
+    )
     args = ap.parse_args()
+    if args.settle < 0:
+        raise SystemExit("--settle 不能为负数")
 
     cues = load_cues(args.subtitles)
     flat, index = build_index(cues)
-    doc = json.load(open(args.quotes, encoding="utf-8"))
+    doc = json.loads(Path(args.quotes).read_text(encoding="utf-8"))
+    if not isinstance(doc.get("images"), list) or not doc["images"]:
+        raise SystemExit("quotes.json 的 images 不能为空")
 
     spec = {"meta": doc.get("meta", {}), "images": []}
-    missing = []
-    for image in doc["images"]:
-        items, cursor = [], 0.0
-        for q in image["quotes"]:
-            t = find_time(flat, index, q["match"], after=cursor)
-            if t is None:                      # 允许倒着引用，退回全局搜
-                t = find_time(flat, index, q["match"])
-            if t is None:
-                missing.append((image["title"], q["match"]))
+    missing: list[tuple[str, str]] = []
+    for image_index, image in enumerate(doc["images"], 1):
+        if not image.get("quotes"):
+            raise SystemExit(f"第 {image_index} 组没有 quotes")
+        items = []
+        image_missing = False
+        cursor = 0.0
+        for quote_index, quote in enumerate(image["quotes"], 1):
+            phrase = str(quote.get("match", ""))
+            cue = find_cue(flat, index, phrase, after=cursor) or find_cue(flat, index, phrase)
+            if cue is None:
+                missing.append((str(image.get("title", image_index)), phrase))
+                image_missing = True
                 continue
-            entry = {"time": round(t + args.settle, 2),
-                     "cn": q.get("cn", ""), "en": q.get("en", "")}
-            if "frame_time" in q:      # 指定画面帧，时间码仍用这句话的真实位置
-                entry["frame_time"] = q["frame_time"]
+            timestamp = min(cue.end, cue.start + args.settle)
+            entry = dict(quote)
+            entry.update({
+                "quote_id": str(quote.get("quote_id") or f"img{image_index:02d}-q{quote_index:02d}"),
+                "time": round(timestamp, 3),
+                "cue_start": round(cue.start, 3),
+                "cue_end": round(cue.end, 3),
+                "time_basis": "cue_start" if args.settle == 0 else f"cue_start+{args.settle:g}s",
+                "match": phrase,
+                "source_en": quote.get("source_en", phrase),
+                "en": quote.get("en", phrase),
+                "cn": quote.get("cn", ""),
+            })
             items.append(entry)
-            cursor = t
-        if not items:
-            sys.exit(f"「{image['title']}」一句都没定位到，检查 match 短语是否照抄字幕原文")
-        items.sort(key=lambda i: i["time"])    # 同图内按时间排序，保证是连续表达
-        for prev, cur in zip(items, items[1:]):
-            # 两句落在同一条字幕上时时间点会撞车，取到的帧和时间码都会重复
-            if cur["time"] - prev["time"] < 1.5:
-                cur["time"] = round(prev["time"] + 1.5, 2)
-        spec["images"].append({
-            "title": image["title"],
-            "hero_time": image.get("hero_time", items[0]["time"]),
-            "quotes": items,
-        })
-        stamps = ", ".join(f"{int(i['time'])//60:02d}:{int(i['time'])%60:02d}"
-                           for i in items)
-        print(f"{image['title']}: {len(items)} 句 [{stamps}]")
+            cursor = cue.start
+
+        if image_missing:
+            continue
+        items.sort(key=lambda item: (item["time"], item["quote_id"]))
+        compiled = dict(image)
+        compiled["id"] = str(image.get("id") or f"img{image_index:02d}")
+        compiled["quotes"] = items
+        if "hero_time" not in compiled:
+            compiled["hero_time"] = items[0]["time"]
+            compiled["hero_time_basis"] = "first_quote_fallback_requires_review"
+        spec["images"].append(compiled)
+        stamps = ", ".join(f"{int(item['time'])//60:02d}:{int(item['time'])%60:02d}" for item in items)
+        print(f"{compiled.get('title', compiled['id'])}: {len(items)} 句 [{stamps}]")
 
     if missing:
-        print("\n以下短语没在字幕里找到（必须照抄字幕原文，含缩写和标点差异）：",
-              file=sys.stderr)
-        for title, phrase in missing:
-            print(f"  {title} → {phrase!r}", file=sys.stderr)
+        lines = ["以下短语没在字幕里找到；未写出任何 spec："]
+        lines.extend(f"  {title} → {phrase!r}" for title, phrase in missing)
+        raise SystemExit("\n".join(lines))
 
-    json.dump(spec, open(args.out, "w", encoding="utf-8"),
-              ensure_ascii=False, indent=1)
-    print(f"\n→ {args.out}")
-    if missing:
-        # 静默少句会一路传到渲染那步，图出来了、句子没了，人眼很难发现
-        sys.exit(f"有 {len(missing)} 句没定位到，spec.json 已写出但缺这几句；"
-                 f"改好 match 重跑，别直接拿去渲染")
+    out = Path(args.out)
+    atomic_write_json(out, spec)
+    print(f"→ {out}")
 
 
 if __name__ == "__main__":

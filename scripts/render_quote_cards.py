@@ -4,6 +4,7 @@
 画面来自原视频，文字由本脚本渲染（原片画面里没有字幕时用这条路）。
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from media_tools import assert_font_glyphs, resolve_font
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 try:
@@ -23,10 +25,9 @@ except ImportError:
     if not FFMPEG:
         sys.exit("找不到 ffmpeg；请安装 ffmpeg 或 imageio-ffmpeg")
 
-# macOS 自带中日韩字体；换平台改这里
-CJK_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf"
-CJK_REG = "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf"
-LATIN = "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
+CJK_BOLD = ""
+CJK_REG = ""
+LATIN = ""
 
 # 主画面 footer 那行的版式：add_brand.py 靠它把字标锚到 footer 右侧，
 # 改这里要同步 render.json（渲染时自动写出，不用手抄）
@@ -37,7 +38,7 @@ FOOTER_UP = 60          # footer 基线距主画面底部
 def probe(video):
     """读时长和有没有视频流。ffprobe 不一定在（imageio-ffmpeg 只带 ffmpeg），用 ffmpeg 自己的输出解析。"""
     r = subprocess.run([FFMPEG, "-hide_banner", "-i", str(video)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, check=False)
     m = re.search(r"Duration:\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)", r.stderr)
     dur = (int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))) if m else None
     return dur, ("Video:" in r.stderr)
@@ -99,8 +100,25 @@ def grab_frame(video, seconds):
 def font(path, size, index=0):
     try:
         return ImageFont.truetype(path, size, index=index)
-    except OSError:
-        return ImageFont.load_default()
+    except OSError as exc:
+        raise SystemExit(f"字体加载失败，已停止渲染：{path}: {exc}") from exc
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def prepare_frame(img, crop_bottom):
+    if crop_bottom <= 0:
+        return img
+    keep = round(img.height * (1.0 - crop_bottom))
+    if keep < 2:
+        raise SystemExit("--source-crop-bottom 过大，裁切后没有可用画面")
+    return img.crop((0, 0, img.width, keep))
 
 
 def wrap(draw, text, fnt, max_w):
@@ -191,7 +209,9 @@ def draw_text_block(img, entries, cfg):
 def band(video, item, w, h, cfg, label=""):
     # frame_time 让画面帧和引用时间码分离：原句正好落在过亮或杂乱的 b-roll 上时，
     # 换一帧干净的画面，右下角时间码仍标这句话的真实出处。
-    img = ImageOps.fit(grab_frame(video, item.get("frame_time", item["time"])), (w, h),
+    frame = prepare_frame(grab_frame(video, item.get("frame_time", item["time"])),
+                          cfg["source_crop_bottom"])
+    img = ImageOps.fit(frame, (w, h),
                        Image.Resampling.LANCZOS, centering=(0.5, cfg["band_focus"]))
     m = cfg.get("band_margin") or cfg["margin"]
     text_w = w - m * 2 - (0 if cfg["align"] == "center" else 120)
@@ -245,7 +265,8 @@ def band(video, item, w, h, cfg, label=""):
 
 
 def hero(video, t, title, w, h, meta, cfg):
-    img = ImageOps.fit(grab_frame(video, t), (w, h),
+    frame = prepare_frame(grab_frame(video, t), cfg["source_crop_bottom"])
+    img = ImageOps.fit(frame, (w, h),
                        Image.Resampling.LANCZOS, centering=(0.5, cfg["hero_focus"]))
     if not cfg["hero_text"]:            # 纯画面开场，文字全部交给下面的字幕条
         return img
@@ -281,7 +302,7 @@ def main():
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--width", type=int, default=1440)
     ap.add_argument("--aspect", default="3:4")
-    ap.add_argument("--hero-fraction", type=float, default=0.42)
+    ap.add_argument("--hero-fraction", type=float, default=0.362)
     ap.add_argument("--cn-size", type=int, default=52)
     ap.add_argument("--en-size", type=int, default=27)
     ap.add_argument("--title-size", type=int, default=78)
@@ -315,9 +336,40 @@ def main():
     ap.add_argument("--no-rule", action="store_true", help="去掉条间分隔线")
     ap.add_argument("--no-hero-text", action="store_true",
                     help="主画面不叠标题，做成纯画面开场")
+    ap.add_argument("--cjk-bold-font")
+    ap.add_argument("--cjk-regular-font")
+    ap.add_argument("--latin-font")
+    ap.add_argument("--source-subtitle-policy",
+                    choices=["unknown", "verified-absent", "cropped"], default="unknown",
+                    help="原片烧录字幕处理结论；unknown 会写入阻断性交付告警")
+    ap.add_argument("--source-crop-bottom", type=float, default=0.0,
+                    help="裁掉原帧底部比例，只有 policy=cropped 时使用")
+    ap.add_argument("--render-json", help="render.json 输出路径；默认写到图片目录")
     args = ap.parse_args()
 
-    aw, ah = (float(x) for x in args.aspect.split(":"))
+    try:
+        aw, ah = (float(x) for x in args.aspect.split(":"))
+    except Exception as exc:
+        raise SystemExit("--aspect 必须是正数比例，例如 3:4") from exc
+    if aw <= 0 or ah <= 0 or args.width <= 0:
+        raise SystemExit("画布宽度和比例必须为正数")
+    if not 0.1 <= args.hero_fraction <= 0.8:
+        raise SystemExit("--hero-fraction 必须在 0.1–0.8")
+    if not 0 <= args.source_crop_bottom < 0.5:
+        raise SystemExit("--source-crop-bottom 必须在 0–0.5")
+    if args.source_subtitle_policy == "cropped" and args.source_crop_bottom <= 0:
+        raise SystemExit("policy=cropped 时必须给出大于 0 的 --source-crop-bottom")
+    if args.source_subtitle_policy != "cropped" and args.source_crop_bottom:
+        raise SystemExit("只有 policy=cropped 时才能使用 --source-crop-bottom")
+
+    global CJK_BOLD, CJK_REG, LATIN
+    CJK_BOLD = resolve_font("cjk_bold", args.cjk_bold_font)
+    CJK_REG = resolve_font("cjk_regular", args.cjk_regular_font)
+    LATIN = resolve_font("latin", args.latin_font)
+    assert_font_glyphs(CJK_BOLD, "中文金句", "cjk_bold")
+    assert_font_glyphs(CJK_REG, "人物访谈", "cjk_regular")
+    assert_font_glyphs(LATIN, "Quote 123", "latin")
+
     W = args.width
     H = round(W * ah / aw)
     hero_h = round(H * args.hero_fraction)
@@ -331,15 +383,24 @@ def main():
            "rule": not args.no_rule, "hero_text": not args.no_hero_text,
            "shadow": args.shadow, "shadow_opacity": args.shadow_opacity,
            "shadow_spread": args.shadow_spread,
-           "auto_dim": args.auto_dim}
+           "auto_dim": args.auto_dim,
+           "source_crop_bottom": args.source_crop_bottom}
 
-    spec = json.load(open(args.spec, encoding="utf-8"))
+    with open(args.spec, encoding="utf-8") as handle:
+        spec = json.load(handle)
+    if not isinstance(spec.get("images"), list) or not spec["images"]:
+        raise SystemExit("spec.images 不能为空")
+    for index, image in enumerate(spec["images"], 1):
+        if not image.get("quotes"):
+            raise SystemExit(f"第 {index} 张没有 quotes，已停止渲染")
     meta = spec.get("meta", {})
     check_complete(args.video, spec)      # 片子不完整就停在这里，别出图
     out_dir = Path(args.out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
         sys.exit(f"{out_dir} 非空；换一个输出目录，不覆盖已有成品")
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.source_subtitle_policy == "unknown":
+        warn("没有声明原片烧录字幕处理结论；先检查原片，再使用 verified-absent 或 cropped")
 
     outputs = []
     for idx, image in enumerate(spec["images"], 1):
@@ -362,29 +423,39 @@ def main():
         name = re.sub(r'[\\/:*?"<>|\s]+', "_", image["title"])[:24]
         path = out_dir / f"{idx:02d}_{name}.jpg"
         canvas.save(path, quality=93, subsampling=0)
-        outputs.append(path)
+        outputs.append((path, image))
         print(f"完成: {path} ({W}x{H})")
 
     cols = min(4, len(outputs))
     rows = (len(outputs) + cols - 1) // cols
     tw, th = 360, 480
     sheet = Image.new("RGB", (cols * tw, rows * th), "#111111")
-    for i, p in enumerate(outputs):
-        sheet.paste(ImageOps.fit(Image.open(p).convert("RGB"), (tw, th),
-                                 Image.Resampling.LANCZOS),
-                    ((i % cols) * tw, (i // cols) * th))
+    for i, (p, _) in enumerate(outputs):
+        with Image.open(p) as opened:
+            preview = ImageOps.fit(opened.convert("RGB"), (tw, th), Image.Resampling.LANCZOS)
+        sheet.paste(preview, ((i % cols) * tw, (i // cols) * th))
     sheet_path = out_dir / "final_contact_sheet.jpg"
     sheet.save(sheet_path, quality=92, subsampling=0)
     print(f"总览图: {sheet_path}")
 
     # 版式边车：add_brand.py 读它对齐锚点，避免两边默认值各走各的
-    (out_dir / "render.json").write_text(json.dumps({
+    render_path = Path(args.render_json) if args.render_json else out_dir / "render.json"
+    render_path.parent.mkdir(parents=True, exist_ok=True)
+    render_path.write_text(json.dumps({
         "width": W, "height": H, "hero_h": hero_h,
         "hero_fraction": args.hero_fraction, "margin": args.margin,
         "hero_text": cfg["hero_text"], "footer": meta.get("footer", ""),
         "footer_size": FOOTER_SIZE, "footer_up": FOOTER_UP,
+        "source_subtitle_policy": args.source_subtitle_policy,
+        "source_crop_bottom": args.source_crop_bottom,
+        "fonts": {"cjk_bold": CJK_BOLD, "cjk_regular": CJK_REG, "latin": LATIN},
+        "spec_sha256": sha256(args.spec), "source_video_sha256": sha256(args.video),
+        "outputs": [{"image_id": str(image.get("id", index + 1)),
+                     "filename": path.name, "sha256": sha256(path)}
+                    for index, (path, image) in enumerate(outputs)],
         "warnings": RENDER_WARNINGS,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"渲染证据: {render_path}")
 
 
 if __name__ == "__main__":

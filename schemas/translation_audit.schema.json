@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["primary_source_engine", "second_source_engine", "independent_architecture", "rounds"],
+  "properties": {
+    "primary_source_engine": {"type": "string", "minLength": 1},
+    "second_source_engine": {"type": "string", "minLength": 1},
+    "independent_architecture": {"type": "boolean"},
+    "rounds": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["round", "status", "artifact"],
+        "properties": {
+          "round": {"type": "integer", "minimum": 0, "maximum": 3},
+          "status": {"const": "completed"},
+          "artifact": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

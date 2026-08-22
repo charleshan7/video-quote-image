@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["images"],
+  "properties": {"images": {"type": "array", "minItems": 1, "items": {
+    "type": "object", "required": ["id", "structure", "planned_count", "actual_count", "core_quote_index", "rejected_quotes", "count_reason"],
+    "properties": {"id": {"type": ["string", "integer"]}, "structure": {"type": "string", "minLength": 1}, "planned_count": {"type": "integer", "minimum": 1}, "actual_count": {"type": "integer", "minimum": 1}, "core_quote_index": {"type": "integer", "minimum": 0}, "rejected_quotes": {"type": "array"}, "count_reason": {"type": "string", "minLength": 1}}
+  }}}
+}

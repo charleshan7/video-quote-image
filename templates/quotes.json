@@ -1,0 +1,7 @@
+{
+  "meta": {"kicker": "", "footer": "", "risk_flags": []},
+  "images": [{
+    "id": "img01", "title": "", "structure": "", "core_quote_index": 0,
+    "quotes": [{"quote_id": "img01-q01", "match": "exact subtitle text", "en": "", "cn": ""}]
+  }]
+}

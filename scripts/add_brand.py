@@ -11,11 +11,15 @@
 
 底图是照片，深色处黑墨会断线，默认给图标垫一层白色柔光（--halo）。
 """
-import argparse, json
+import argparse
+import hashlib
+import json
 from pathlib import Path
+
+from media_tools import assert_font_glyphs, resolve_font
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-LATIN = "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"   # Linux 可用英文字体
+LATIN = ""
 # 下面两个只是兜底：正常情况下版式参数从渲染器写出的 render.json 读，
 # 手抄常量会在改 --hero-fraction 后悄悄错位。
 FOOTER_SIZE = 25          # render_quote_cards.hero() 里 footer 的字号
@@ -24,7 +28,18 @@ FOOTER_UP = 60            # footer 距主画面底部的距离
 
 def ink_crop(path):
     im = Image.open(path).convert("RGBA")
-    return im.crop(im.split()[3].getbbox())
+    bbox = im.getchannel("A").getbbox()
+    if bbox is None:
+        raise SystemExit(f"品牌素材完全透明：{path}")
+    return im.crop(bbox)
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def line_alpha(im):
@@ -69,6 +84,8 @@ def main():
     ap.add_argument("--spec", help="读 meta.footer 用于定位字标；不给就用 --footer")
     ap.add_argument("--render", help="渲染器写出的 render.json（版式真源）；"
                                      "默认自动找源图同目录的 render.json")
+    ap.add_argument("--latin-font")
+    ap.add_argument("--metadata", help="可选品牌证据 JSON 输出路径")
     ap.add_argument("--footer", default="", help="直接给 footer 文案（覆盖 --spec）")
     # 版式参照（要和渲染时一致，否则锚点算不准）
     ap.add_argument("--margin", type=int, default=None)
@@ -91,12 +108,16 @@ def main():
     ap.add_argument("--spread", type=int, default=6)
     a = ap.parse_args()
 
+    global LATIN
+    LATIN = resolve_font("latin", a.latin_font)
+    assert_font_glyphs(LATIN, "Brand @ 123", "latin")
+
     base = Image.open(a.src).convert("RGB")
 
     # 版式参数一律以渲染器写出的 render.json 为准，命令行显式传的才覆盖它。
     # 两边各存一份默认值时，改了 --hero-fraction 只改渲染那侧，字标就飘了。
     rp = Path(a.render) if a.render else Path(a.src).parent / "render.json"
-    R = json.load(open(rp, encoding="utf-8")) if rp.exists() else {}
+    R = json.loads(rp.read_text(encoding="utf-8")) if rp.exists() else {}
     margin = a.margin if a.margin is not None else R.get("margin", 56)
     hero_frac = a.hero_fraction if a.hero_fraction is not None else R.get("hero_fraction", 0.362)
     hero_h = R.get("hero_h") or round(base.height * hero_frac)
@@ -105,9 +126,9 @@ def main():
     src_note = f"render.json({rp.parent.name}/)" if R else "内置默认值"
     if a.logo_dir:
         L = Path(a.logo_dir)
-    else:                                   # 本机品牌目录优先，clone 下来的机器回落到仓库自带
-        local = Path.home() / "Developer/ffdy-brand"
-        L = local if (local / "cat-circle.webp").exists() else Path(__file__).parent.parent / "assets/brand"
+    else:
+        # 默认只使用版本库内资产，避免不同机器因 ~/Developer 内容不同而生成不同品牌结果。
+        L = Path(__file__).parent.parent / "assets/brand"
     if not (L / "cat-circle.webp").exists():
         raise SystemExit(f"找不到品牌素材：{L}/cat-circle.webp（用 --logo-dir 指定）")
     RGB = {"white": (255, 255, 255), "black": (0, 0, 0)}
@@ -134,7 +155,7 @@ def main():
 
     footer = a.footer
     if not footer and a.spec:
-        footer = (json.load(open(a.spec, encoding="utf-8")).get("meta") or {}).get("footer", "")
+        footer = (json.loads(Path(a.spec).read_text(encoding="utf-8")).get("meta") or {}).get("footer", "")
 
     if a.word_x >= 0 and a.word_y >= 0:
         wx, wy, anchor = a.word_x, a.word_y, "手动坐标"
@@ -156,7 +177,28 @@ def main():
         anchor = f"footer 右侧+{a.word_gap} 「{footer}」"
 
     stamp(base, lock, (wx, wy), RGB[a.word_ink], a.word_halo, a.blur, a.spread)
-    base.save(a.out, quality=93, subsampling=0)
+    for label, x, y, width, height in (
+        ("icon", ix, iy, icon.width, icon.height),
+        ("wordmark", wx, wy, lock.width, lock.height),
+    ):
+        if x < 0 or y < 0 or x + width > base.width or y + height > base.height:
+            raise SystemExit(f"{label} 超出画布：({x},{y},{width},{height}) / {base.size}")
+    out = Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    base.save(out, quality=93, subsampling=0)
+    if a.metadata:
+        metadata = {
+            "source": str(Path(a.src)), "output": str(out),
+            "source_sha256": sha256(a.src), "output_sha256": sha256(out),
+            "icon_sha256": sha256(L / "cat-circle.webp"),
+            "wordmark_sha256": sha256(L / "wordmark.webp"),
+            "latin_font": LATIN, "render_metadata": str(rp) if R else None,
+            "icon_box": [ix, iy, icon.width, icon.height],
+            "wordmark_box": [wx, wy, lock.width, lock.height],
+        }
+        meta_path = Path(a.metadata)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"完成: {a.out}\n  版式来源 {src_note}: margin={margin} hero_h={hero_h} "
           f"hero_text={hero_text}"
           f"\n  图标 {icon.width}x{icon.height} @({ix},{iy}) {a.ink} halo={a.halo}"

@@ -1,0 +1,6 @@
+{
+  "images": [{
+    "id": "img01", "structure": "", "planned_count": 1, "actual_count": 1,
+    "core_quote_index": 0, "rejected_quotes": [], "count_reason": ""
+  }]
+}

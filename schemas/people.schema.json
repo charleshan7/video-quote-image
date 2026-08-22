@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["people"],
+  "properties": {"people": {"type": "array", "minItems": 1, "items": {
+    "type": "object", "required": ["name", "person_type", "role", "source_url", "source_quote", "verified_at", "confidence"],
+    "properties": {"name": {"type": "string", "minLength": 1}, "person_type": {"enum": ["interviewer", "interviewee", "speaker", "narrator", "subject"]}, "role": {"type": "string", "minLength": 1}, "source_url": {"type": "string", "minLength": 1}, "source_quote": {"type": "string", "minLength": 1}, "verified_at": {"type": "string", "minLength": 1}, "confidence": {"type": ["number", "string"]}}
+  }}}
+}

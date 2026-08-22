@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+  "required": ["source_url", "webpage_url", "extractor", "source_id", "downloaded_at", "yt_dlp_version", "download_mode", "format_selector", "quality_scope", "best_visible_to_yt_dlp", "media_path", "file_sha256", "video_streams", "audio_streams"],
+  "properties": {"download_mode": {"const": "direct"}, "format_selector": {"const": "bestvideo*+bestaudio/best"}, "quality_scope": {"const": "best_visible_to_yt_dlp"}, "best_visible_to_yt_dlp": {"const": true}, "file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "video_streams": {"type": "array", "minItems": 1}, "audio_streams": {"type": "array", "minItems": 1}}
+}

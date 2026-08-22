@@ -1,0 +1,12 @@
+{
+  "heroes": [{
+    "image_id": "img01", "hero_subject": "", "hero_subject_role": "interviewee",
+    "chosen_hero_time": 0, "candidates": [{"time": 0, "note": ""}]
+  }],
+  "images": [{
+    "image_id": "img01", "rows": [{
+      "quote_id": "img01-q01", "chosen_frame_time": 0,
+      "candidates": [{"time": 0, "note": ""}]
+    }]
+  }]
+}

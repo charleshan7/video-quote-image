@@ -1,20 +1,14 @@
-# Source Download Policy
+# 下载证据边界
 
-Always download the highest-quality directly available source before transcription, frame selection or rendering. Do not use a browser preview, thumbnail, screenshot, low-resolution convenience format or a video-only DASH stream as the working source.
+使用 `scripts/download_source.py` 请求 `bestvideo*+bestaudio/best`，合并为同时包含视频和音频的直接媒体，并保存来源页面、extractor、源 ID、yt-dlp 版本、格式 ID、流信息和文件哈希。
 
-Use the deterministic selector below and merge the best video and best audio streams:
+“最佳”只表示 yt-dlp 在执行时的账号、地区、Cookie 和权限条件下可见格式中的最佳选择。脚本不得声称已经证明其他访问条件下不存在更高质量版本。
 
-```bash
-yt-dlp --no-playlist \
-  --format 'bestvideo*+bestaudio/best' \
-  --format-sort 'res,fps,vcodec,acodec,abr' \
-  --merge-output-format mkv \
-  --write-info-json \
-  --output 'source.%(ext)s' URL
-```
+以下情况必须停止 reviewed/final：
 
-After download, run `scripts/download_source.py` or record an equivalent `source_download.json`. The manifest must include the source URL, direct-download mode, selector, `quality_rank=best_available`, `is_best_available=true`, merged media path, SHA-256, duration, file size, video/audio streams, codec, resolution, frame rate, bitrate, requested format IDs and download metadata.
+- 只取得预览、缩略图、音频流、无声视频或剪辑版。
+- info JSON 缺失，无法记录选择的格式 ID。
+- 字幕时长、内容或版本与视频不一致。
+- 来源受会员、地区或登录限制，而当前访问条件无法判断完整性。
 
-The quality requirement means **the highest quality the source actually exposes to the downloader at that time**. It does not mean inventing a higher resolution or upscaling a low-resolution source. If the highest stream has no audio, download the best video and best audio separately and merge them; a video-only file does not pass the audio gate.
-
-If yt-dlp cannot expose the highest source, the file is truncated, the source is region/permission restricted, or the selected stream differs from the subtitle version, stop and tell the user. Do not silently fall back to a preview and do not call the result final.
+重试需要使用新目录，避免把旧来源文件或旧 manifest 混进当前版本。

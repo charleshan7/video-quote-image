@@ -18,11 +18,19 @@
     ...（自己把每个 {stem}.txt 写出来）...
     asr_crosscheck.py VIDEO --spec spec.json --subs SUBS.srt --out-dir asr-xcheck --diff-only
 """
-import argparse, difflib, json, os, re, shutil, subprocess, sys
+import argparse
+import difflib
+import hashlib
+import json
+import re
+import shlex
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from locate_quotes import load_cues                      # 复用字幕解析，保持口径一致
+from locate_quotes import load_cues  # 复用字幕解析，保持口径一致
 
 try:
     import imageio_ffmpeg
@@ -70,8 +78,10 @@ def verify(video, seg, rt, i1, i2, at, j1, j2, pad, cmds, workdir):
     votes = []
     for cmd in cmds:
         stem = wav.with_suffix("")
-        r = subprocess.run(cmd.replace("{wav}", str(wav)).replace("{stem}", str(stem)),
-                           shell=True, capture_output=True, text=True)
+        r = run_engine(cmd, wav, stem)
+        if r.returncode != 0:
+            votes.append("引擎失败")
+            continue
         txt = stem.with_suffix(".txt")
         wide = norm(txt.read_text(encoding="utf-8") if txt.exists() else r.stdout)
         if txt.exists():
@@ -91,13 +101,31 @@ def verify(video, seg, rt, i1, i2, at, j1, j2, pad, cmds, workdir):
 
 def srt_window(cues, t0, t1):
     """取 [t0,t1] 覆盖到的字幕原文。"""
-    return " ".join(line for t, line in cues if t0 <= t <= t1)
+    return " ".join(cue.text for cue in cues if cue.end >= t0 and cue.start <= t1)
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def run_engine(template, wav, stem):
+    """Run an explicitly supplied command template without reusing stale output."""
+    txt = Path(stem).with_suffix(".txt")
+    txt.unlink(missing_ok=True)
+    command = template.replace("{wav}", shlex.quote(str(wav))).replace(
+        "{stem}", shlex.quote(str(stem))
+    )
+    return subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True, check=False)
 
 
 def has_audio(video):
     """yt-dlp 下的高码率 DASH 视频流是纯画面，没有音轨——必须先拦住，否则每段都失败。"""
     r = subprocess.run([FFMPEG, "-hide_banner", "-i", str(video)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, check=False)
     return "Audio:" in r.stderr
 
 
@@ -156,6 +184,7 @@ def main():
     ap.add_argument("--verify-pad", type=float, default=15.0, help="复核窗口的半径秒数")
     ap.add_argument("--no-verify", action="store_true", help="不自动复核高危分歧")
     ap.add_argument("--report", default="asr-xcheck.md")
+    ap.add_argument("--report-json", default="asr-xcheck.json")
     a = ap.parse_args()
 
     if not a.diff_only and not has_audio(a.video):
@@ -164,13 +193,15 @@ def main():
 
     out = Path(a.out_dir); out.mkdir(parents=True, exist_ok=True)
     cues = load_cues(a.subs)
-    spec = json.load(open(a.spec, encoding="utf-8"))
+    with open(a.spec, encoding="utf-8") as handle:
+        spec = json.load(handle)
 
     segs = []
     for i, image in enumerate(spec["images"], 1):
         for j, q in enumerate(image["quotes"], 1):
             t = q["time"]
-            segs.append({"id": f"{i:02d}-{j:02d}", "img": image["title"], "t": t,
+            segs.append({"id": f"{i:02d}-{j:02d}", "quote_id": str(q.get("quote_id", f"{i:02d}-{j:02d}")),
+                         "img": image["title"], "t": t, "source_en": q.get("source_en", q.get("match", "")),
                          "t0": max(0.0, t - a.pad), "dur": a.pad * 2,
                          "a0": max(0.0, t - a.pad - a.context),
                          "adur": (a.pad + a.context) * 2,
@@ -183,13 +214,22 @@ def main():
             cut(a.video, s["a0"], s["adur"], s["wav"])
 
     if not a.diff_only and a.asr_cmd:
+        engine_failures = []
         for n, s in enumerate(segs, 1):
-            cmd = a.asr_cmd.replace("{wav}", str(s["wav"])).replace("{stem}", str(out / s["id"]))
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            r = run_engine(a.asr_cmd, s["wav"], out / s["id"])
             if not s["txt"].exists() and r.stdout.strip():   # 引擎只吐 stdout 时兜住
                 s["txt"].write_text(r.stdout, encoding="utf-8")
+            if r.returncode != 0 or not s["txt"].exists():
+                engine_failures.append({"id": s["id"], "returncode": r.returncode,
+                                        "stderr": r.stderr.strip()[:500]})
             print(f"\r识别 {n}/{len(segs)}", end="", flush=True)
         print()
+        if engine_failures:
+            Path(a.report_json).write_text(json.dumps({
+                "status": "failed", "engine_failures": engine_failures,
+                "segment_count": len(segs), "missing_count": len(engine_failures),
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            raise SystemExit(f"ASR 有 {len(engine_failures)} 段失败；结构化失败记录见 {a.report_json}")
     elif not a.diff_only:
         print(f"已切出 {len(segs)} 段到 {out}/。用任意 ASR 把每段转成同名 .txt，再加 --diff-only 重跑：")
         for s in segs[:3]:
@@ -240,7 +280,7 @@ def main():
     rows.sort(key=lambda r: ({"高": 0, "中": 1, "已排除": 2}[r["lvl"]], r["id"]))
     hi = sum(1 for r in rows if r["lvl"] == "高")
     cleared = sum(1 for r in rows if r["lvl"] == "已排除")
-    lines = [f"# ASR 交叉校验\n",
+    lines = ["# ASR 交叉校验\n",
              f"字幕 `{Path(a.subs).name}` vs 第二家识别，共 {len(segs)} 段，"
              f"分歧 {len(rows)} 处（高 {hi}），语气词噪声 {low} 处已滤除。"
              + (f"另有 {cleared} 处高危经加宽识别判定为截断假阳性，已排除。" if cleared else "")
@@ -257,7 +297,30 @@ def main():
         if r.get("vnote"):
             lines.append(f"- **复核: {r['verdict']}** — {r['vnote']}")
     Path(a.report).write_text("\n".join(lines), encoding="utf-8")
+    report_json = {
+        "status": "complete" if missing == 0 else "incomplete",
+        "source_video": str(Path(a.video).resolve()),
+        "source_video_sha256": file_sha256(a.video),
+        "subtitles": str(Path(a.subs).resolve()),
+        "subtitles_sha256": file_sha256(a.subs),
+        "segment_count": len(segs), "missing_count": missing,
+        "high_risk_count": hi, "difference_count": len(rows),
+        "segments": [{"id": s["id"], "quote_time": s["t"], "image": s["img"],
+                      "quote_id": s["quote_id"],
+                      "result_present": s["txt"].exists()} for s in segs],
+        "rows": [{
+            "quote_id": s["quote_id"], "source_en": s["source_en"],
+            "second_source": s["txt"].read_text(encoding="utf-8") if s["txt"].exists() else "",
+            "severity": "high" if any(row["id"] == s["id"] and row["lvl"] == "高" for row in rows)
+                        else ("medium" if any(row["id"] == s["id"] and row["lvl"] == "中" for row in rows) else "none"),
+        } for s in segs],
+        "differences": [{key: row.get(key) for key in ("id", "img", "t", "lvl", "why", "srt", "asr")}
+                        for row in rows],
+    }
+    Path(a.report_json).write_text(json.dumps(report_json, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"→ {a.report}：{len(segs)} 段，分歧 {len(rows)} 处（高 {hi}），噪声滤除 {low} 处")
+    if missing:
+        raise SystemExit(f"有 {missing} 段缺少 ASR 结果；不能作为完成证据")
 
 
 if __name__ == "__main__":
