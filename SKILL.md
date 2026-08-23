@@ -42,7 +42,7 @@ description: 把访谈、播客、演讲或纪录片制作成可核验的中文�
 ### 1. 环境检查
 
 ```bash
-"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/doctor.py"
+"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/doctor.py" --mode download
 ```
 
 缺 venv 时：
@@ -52,7 +52,7 @@ uv venv --python 3.11 "<SKILL_DIR>/.venv"
 uv pip install --python "<SKILL_DIR>/.venv/bin/python" -r "<SKILL_DIR>/requirements-tools.txt"
 ```
 
-需要本地 Whisper 时另装 `requirements-asr.txt`。`requirements-tools.txt` 包含完整下载流水线所需的 yt-dlp；`ffprobe` 和系统字体仍需由宿主环境提供。
+只处理本地视频时用 `--mode render`；需要云端 ASR 时另跑 `--mode cloud-asr`。本地 Whisper 另装 `requirements-asr.txt`；维护 Skill 和运行校验时安装 `requirements-dev.txt`。`ffprobe` 和系统字体仍需由宿主环境提供。
 
 ### 2. 下载并保存来源证据
 
@@ -61,7 +61,7 @@ uv pip install --python "<SKILL_DIR>/.venv/bin/python" -r "<SKILL_DIR>/requireme
   --out-dir PROJECT/source
 ```
 
-脚本证明的是“yt-dlp 在当前账号、地区和 Cookie 可见范围内选择的最佳格式”，不是所有访问条件下的绝对最高版本。确认字幕与视频属于同一版本后，把字幕保存为 `audit/source_subs.srt` 或 `.vtt`。
+脚本使用 `--ignore-config`，避免宿主机 yt-dlp 全局配置静默改变结果。它证明的是“当前访问条件下可见的最佳格式”，不是所有账号和地区下的绝对最高版本。后续命令中的 `VIDEO` 必须使用 `source_download.json.media_path` 指向的实际文件；不要假定扩展名一定是 MKV。确认字幕与视频属于同一版本后，把字幕保存为 `audit/source_subs.srt` 或 `.vtt`。
 
 ### 3. 选句并定位
 
@@ -72,15 +72,31 @@ uv pip install --python "<SKILL_DIR>/.venv/bin/python" -r "<SKILL_DIR>/requireme
   audit/source_subs.srt audit/quotes.json -o audit/spec.json
 ```
 
-定位失败时不会写出残缺 spec。同一 cue 内的多条引用可以共享来源时间；之后单独选择各自 `frame_time`。
+定位失败或同一句存在多个候选位置时不会写出 spec。歧义时在 quotes 中显式填写 `occurrence`、`after_time` 或 `before_time`。同一 cue 内的多条引用可以共享来源时间；之后单独选择各自 `frame_time`。
 
 ### 4. 校准和选帧
 
-按 calibration reference 生成四轮逐句 JSON。每句至少比较 5 个真实候选帧；每张头图至少比较 8 个宽窗口候选，并把选择写入 `audit/frame_audit.json` 和 spec。
+按 calibration reference 生成四轮逐句 JSON。`stop` 会阻断交付；`revise` 必须真实更新 spec。ASR 完成报告必须绑定当前视频、字幕、引擎、模型、架构家族和逐段哈希。
+
+生成真实候选帧证据：
+
+```bash
+"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/extract_frame_candidates.py" VIDEO \
+  --root PROJECT --spec audit/spec.json --reviewer "REVIEWER"
+```
+
+逐张检查候选图，填写 `chosen_reason`，并让最终时间同时写入 `frame_audit.json` 和 spec。独立选择后的最佳帧允许恰好等于来源时间；门禁检查的是选择证据，不是强制时间不同。
 
 ### 5. 渲染
 
-先检查源片是否有烧录字幕。没有时使用 `verified-absent`；有时通过安全裁切去除后使用 `cropped` 并给出实际裁切比例。不能证明已隐藏时保持 `unknown`，该状态会阻断 reviewed/final。
+先生成烧录字幕抽样证据。没有时使用 `verified-absent`；有时通过安全裁切去除后使用 `cropped` 并给出实际裁切比例：
+
+```bash
+"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/extract_subtitle_audit.py" VIDEO \
+  --root PROJECT --policy verified-absent --reviewer "REVIEWER"
+```
+
+至少检查三组原帧和处理帧，把 `decision=review-required` 改成真实结论。`cropped` 时抽样命令和渲染必须使用相同的 `--crop-bottom/--source-crop-bottom`。没有结构化证据会阻断 reviewed/final。
 
 ```bash
 "<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/render_quote_cards.py" VIDEO \
@@ -106,14 +122,15 @@ for f in images/0*.jpg; do
 done
 ```
 
-逐张查看 1440×1920 原图，确认人物、眼睛、构图、原字幕隐藏、文字、时间码和品牌位置。随后完成 `xiaohongshu_package.md`，构建 manifest，创建 ZIP，再运行 preflight：
+逐张查看 1440×1920 原图，确认人物、眼睛、构图、原字幕隐藏、文字、时间码和品牌位置。随后完成 `xiaohongshu_package.md`，用确定性打包脚本一次性构建 manifest、精确成员 ZIP 和外部哈希证明，再运行 preflight：
 
 ```bash
-"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/build_release_manifest.py" \
-  --root PROJECT --status final --version v1 --zip ../release-v1.zip
+"<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/package_release.py" \
+  --root PROJECT --status final --version v1 --zip ../release-v1.zip \
+  --branding required
 
 "<SKILL_DIR>/.venv/bin/python" "<SKILL_DIR>/scripts/preflight.py" \
-  --root PROJECT --video source/source.mkv --status final --zip ../release-v1.zip
+  --root PROJECT --video VIDEO --status final --zip ../release-v1.zip
 ```
 
-只有 preflight 退出 0、ZIP 成员哈希与 manifest 一致、且原尺寸人工检查完成，才能报告为 reviewed/final。
+不需要品牌时必须显式使用 `--branding none`，且不得留下 branded/ 或 audit/brand 文件。ZIP 不允许额外、重复、加密、符号链接或未登记成员。只有 preflight 退出 0、ZIP/manifest/attestation 一致、且原尺寸人工检查完成，才能报告为 reviewed/final。

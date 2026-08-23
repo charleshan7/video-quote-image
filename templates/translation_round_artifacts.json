@@ -1,18 +1,20 @@
 {
   "round_0_asr_crosscheck": {
-    "round": 0,
-    "status": "completed",
-    "artifact": "audit/review_asr_xcheck.json",
-    "quote_count": 0,
+    "status": "complete",
+    "source_video_sha256": "replace-with-current-video-sha256",
+    "subtitles_sha256": "replace-with-current-subtitle-sha256",
+    "primary_engine": {"name": "youtube-auto/google-asr", "model": "platform-auto-captions", "version": "unknown", "family": "google-asr"},
+    "second_engine": {"name": "elevenlabs", "model": "scribe_v2", "version": "unknown", "family": "elevenlabs-scribe"},
+    "transcript_provenance_verified": true,
+    "segment_count": 1,
+    "missing_count": 0,
+    "segments": [{"quote_id": "01-01", "quote_time": 0, "wav_sha256": "replace-with-sha256", "transcript_sha256": "replace-with-sha256", "result_present": true}],
     "rows": [
       {
         "quote_id": "01-01",
         "source_en": "exact primary subtitle text",
         "second_source": "independent ASR text and engine metadata",
-        "severity": "low|medium|high",
-        "discrepancies": [],
-        "adjudication": "retain|revise|stop",
-        "changed": false
+        "severity": "none"
       }
     ]
   },
@@ -20,23 +22,23 @@
     "round": 1,
     "status": "completed",
     "artifact": "audit/round1_self_check.json",
-    "quote_count": 0,
+    "quote_count": 1,
     "rows": [
       {
         "quote_id": "01-01",
-        "source_en": "",
-        "current_cn": "",
+        "source_en": "exact source sentence",
+        "current_cn": "已核对的中文译文",
         "checks": {
-          "subject": "pass|revise",
-          "person": "pass|revise",
-          "negation": "pass|revise",
-          "quantity": "pass|revise",
-          "scope": "pass|revise",
-          "causality": "pass|revise",
-          "tone": "pass|revise",
-          "terms": "pass|revise"
+          "subject": "pass",
+          "person": "pass",
+          "negation": "pass",
+          "quantity": "pass",
+          "scope": "pass",
+          "causality": "pass",
+          "tone": "pass",
+          "terms": "pass"
         },
-        "adjudication": "retain|revise|stop",
+        "adjudication": "retain",
         "changed": false
       }
     ]
@@ -45,22 +47,23 @@
     "round": 2,
     "status": "completed",
     "artifact": "audit/round2_mechanical_diff.json",
-    "quote_count": 0,
+    "quote_count": 1,
     "rows": [
       {
         "quote_id": "01-01",
-        "source_en": "",
-        "current_cn": "",
+        "source_en": "exact source sentence",
+        "current_cn": "已核对的中文译文",
         "diff": {
-          "subject": "same|different",
-          "negation": "same|different",
-          "quantity": "same|different",
-          "modality": "same|different",
-          "scope": "same|different",
-          "terms": "same|different",
-          "causality": "same|different"
+          "subject": "same",
+          "negation": "same",
+          "quantity": "same",
+          "modality": "same",
+          "scope": "same",
+          "terms": "same",
+          "causality": "same"
         },
-        "adjudication": "retain|revise|stop",
+        "adjudication": "retain",
+        "adjudication": "retain",
         "changed": false
       }
     ]
@@ -69,25 +72,25 @@
     "round": 3,
     "status": "completed",
     "artifact": "audit/round3_adjudication.json",
-    "quote_count": 0,
+    "quote_count": 1,
     "rows": [
       {
         "quote_id": "01-01",
-        "source_en": "",
-        "current_cn": "",
-          "evidence_basis": ["round0_asr", "round1_self_check", "round2_mechanical_diff"],
+        "source_en": "exact source sentence",
+        "current_cn": "已核对的中文译文",
+        "evidence_basis": ["round0_asr", "round1_self_check", "round2_mechanical_diff"],
         "claims": {
-          "subject": "",
-          "negation": "",
-          "quantity": "",
-          "modality": "",
-          "scope": "",
+          "subject": "speaker",
+          "negation": "none",
+          "quantity": "none",
+          "modality": "statement",
+          "scope": "sentence",
           "terms": [],
-          "causality": "",
+          "causality": "none",
           "source_time": 0
         },
         "adjudication": "retain|revise|stop",
-          "changed": false
+        "changed": false
       }
     ]
   }

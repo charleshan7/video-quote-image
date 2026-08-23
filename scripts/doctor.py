@@ -15,14 +15,19 @@ from media_tools import assert_font_glyphs, ffmpeg_exe, ffprobe_exe, resolve_fon
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--require-local-asr", action="store_true")
+    ap.add_argument("--mode", choices=["render", "download", "cloud-asr", "maintain", "full"],
+                    default="render", help="只检查当前任务真正需要的依赖")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
-    report = {"python": sys.version.split()[0], "ok": {}, "missing": {}}
+    report = {"python": sys.version.split()[0], "mode": args.mode, "ok": {}, "missing": {}}
 
-    for module in ("PIL", "imageio_ffmpeg", "jsonschema"):
+    modules = ["PIL", "imageio_ffmpeg", "jsonschema"]
+    if args.mode == "maintain":
+        modules.extend(["yaml", "ruff"])
+    for module in modules:
         try:
             importlib.import_module(module)
-            distribution = {"PIL": "Pillow"}.get(module, module)
+            distribution = {"PIL": "Pillow", "yaml": "PyYAML"}.get(module, module)
             report["ok"][module] = importlib.metadata.version(distribution)
         except Exception as exc:  # noqa: BLE001 - report import failure without crashing doctor
             report["missing"][module] = str(exc)
@@ -38,11 +43,19 @@ def main() -> int:
             report["ok"][name] = finder()
         except SystemExit as exc:
             report["missing"][name] = str(exc)
-    for name in ("yt-dlp", "curl", "rsync"):
+    required_tools = {
+        "render": (),
+        "download": ("yt-dlp",),
+        "cloud-asr": ("curl",),
+        "maintain": ("yt-dlp", "curl", "rsync"),
+        "full": ("yt-dlp", "curl", "rsync"),
+    }[args.mode]
+    for name in required_tools:
         path = shutil.which(name)
         (report["ok"] if path else report["missing"])[name] = path or "not on PATH"
 
-    for kind, sample in (("cjk_bold", "中文测试"), ("cjk_regular", "人物访谈"), ("latin", "Quote 123")):
+    font_checks = (("cjk_bold", "中文测试"), ("cjk_regular", "人物访谈"), ("latin", "Quote 123"))
+    for kind, sample in font_checks:
         try:
             path = resolve_font(kind)
             assert_font_glyphs(path, sample, kind)

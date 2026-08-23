@@ -7,7 +7,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -15,14 +19,19 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install system dependencies
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk fonts-dejavu-core rsync
+      - name: Install macOS media dependencies
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
       - name: Install Python dependencies
-        run: pip install -r requirements-tools.txt ruff
+        run: pip install -r requirements-dev.txt
       - name: Environment doctor
-        run: python scripts/doctor.py
+        run: python scripts/doctor.py --mode maintain
       - name: Static checks
         run: |
-          python -m compileall -q scripts
+          python scripts/validate_skill.py .
+          python -m compileall -q scripts tests
           ruff check scripts tests
           for file in schemas/*.json templates/*.json; do python -m json.tool "$file" >/dev/null; done
       - name: Unit tests

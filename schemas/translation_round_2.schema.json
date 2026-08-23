@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["round", "status", "artifact", "quote_count", "rows"],
+  "properties": {
+    "round": {"const": 2}, "status": {"const": "completed"},
+    "artifact": {"type": "string", "minLength": 1},
+    "quote_count": {"type": "integer", "minimum": 1},
+    "rows": {"type": "array", "minItems": 1, "items": {
+      "type": "object",
+      "required": ["quote_id", "source_en", "current_cn", "diff", "adjudication", "changed"],
+      "properties": {
+        "quote_id": {"type": "string", "minLength": 1},
+        "source_en": {"type": "string", "minLength": 1},
+        "current_cn": {"type": "string", "minLength": 1},
+        "diff": {"type": "object", "additionalProperties": false,
+          "required": ["subject", "negation", "quantity", "modality", "scope", "terms", "causality"],
+          "properties": {
+            "subject": {"enum": ["same", "different"]}, "negation": {"enum": ["same", "different"]},
+            "quantity": {"enum": ["same", "different"]}, "modality": {"enum": ["same", "different"]},
+            "scope": {"enum": ["same", "different"]}, "terms": {"enum": ["same", "different"]},
+            "causality": {"enum": ["same", "different"]}
+          }
+        },
+        "adjudication": {"enum": ["retain", "revise", "stop"]},
+        "changed": {"type": "boolean"}
+      }
+    }}
+  }
+}

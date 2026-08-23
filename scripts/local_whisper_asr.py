@@ -5,12 +5,22 @@ This script only produces a secondary ASR text source. It does not adjudicate
 transcript differences or perform translation review.
 """
 import argparse
+import hashlib
+import importlib.metadata
 import json
 import subprocess
 import tempfile
 from pathlib import Path
 
 from media_tools import ffmpeg_exe, ffprobe_exe
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def parse_window(value):
@@ -130,12 +140,16 @@ def main():
 
     metadata = {
         "engine": "openai-whisper",
+        "engine_version": importlib.metadata.version("openai-whisper"),
         "model": args.model,
+        "model_source": getattr(whisper, "_MODELS", {}).get(args.model),
         "language": args.language,
         "device": args.device,
         "fp16": bool(args.fp16),
         "video": str(args.video),
+        "video_sha256": sha256(args.video),
         "spec": str(args.spec) if args.spec else None,
+        "spec_sha256": sha256(args.spec) if args.spec else None,
         "context_seconds": args.context,
         "windows_absolute_seconds": [[round(a, 3), round(b, 3)] for a, b in windows],
         "purpose": "secondary ASR text source; requires separate diff and structured adjudication",

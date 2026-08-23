@@ -6,7 +6,7 @@
 
 用第二来源 ASR 复核入选片段，优先关注否定、数字、专名和限定词。Whisper、whisper.cpp 与 faster-whisper 属于同一模型家族，不构成 final 所需的异构第二来源。
 
-ASR 报告必须记录输入视频和字幕哈希、片段总数、缺失数和差异；任何片段失败都不能标记完成。提供商名称只能作为模型家族启发式，不能被描述成数学上的误差独立证明。
+ASR 报告必须记录输入视频和字幕哈希、两个引擎的 provider/model/version/family、逐段 WAV/转写哈希、片段总数、缺失数和差异；任何片段失败都不能标记完成。`--diff-only` 必须有与当前 WAV、provider 和 model 匹配的 `.meta.json`，禁止复用旧 TXT。未知家族不能进入 final。提供商名称只能作为模型家族启发式，不能被描述成数学上的误差独立证明。
 
 云端 ASR 需要用户允许并显式 `--allow-cloud`。不要在 Skill 中硬编码价格、免费额度或“不会产生超额费用”等易变结论。
 
@@ -22,4 +22,4 @@ ASR 报告必须记录输入视频和字幕哈希、片段总数、缺失数和�
 
 综合前面三轮，为每句保存 `claims`、`evidence_basis`、`adjudication` 和 `changed`。裁决只能是 `retain`、`revise` 或 `stop`。证据冲突无法收敛时用 `stop`，不要猜测。
 
-`final` 必须命名两个引擎、声明异构家族，并提供完整结构化 ASR 报告；`reviewed` 也必须完成四轮，但可把明确的非关键局限写入风险项。
+`stop` 在任何一轮都会阻断 reviewed/final；`revise` 必须有 `changed=true` 且更新后的中文与交付 spec 一致。`final` 必须命名两个已知家族的引擎、声明异构家族，并提供完整结构化 ASR 报告；`reviewed` 也必须完成四轮，但可把明确的非关键局限写入风险项。

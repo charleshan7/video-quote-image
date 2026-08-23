@@ -39,7 +39,7 @@ def main():
         raise SystemExit(f'output already contains source artifacts; use a new directory: {out}')
     template=str(out / (args.basename + '.%(ext)s'))
     selector='bestvideo*+bestaudio/best'
-    cmd=['yt-dlp','--no-playlist','--format',selector,'--format-sort','res,fps,vcodec,acodec,abr','--merge-output-format','mkv','--write-info-json','--no-write-playlist-metafiles','--output',template,'--print','after_move:filepath',args.url]
+    cmd=['yt-dlp','--ignore-config','--no-playlist','--format',selector,'--format-sort','res,fps,vcodec,acodec,abr','--merge-output-format','mkv','--write-info-json','--no-write-playlist-metafiles','--output',template,'--print','after_move:filepath',args.url]
     try:
         result=subprocess.run(cmd, check=True, text=True, capture_output=True)
     except FileNotFoundError as exc:
@@ -79,6 +79,7 @@ def main():
         'quality_scope':'best_visible_to_yt_dlp',
         'best_visible_to_yt_dlp':bool(info and (requested or info.get('format_id'))),
         'quality_evidence':'yt-dlp selector plus requested_formats from info JSON',
+        'configuration_scope':'--ignore-config; only options recorded by this script were applied',
         'media_path':str(media.relative_to(out)),
         'container':media.suffix.lstrip('.'),
         'file_sha256':sha256(media),

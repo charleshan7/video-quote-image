@@ -1,12 +1,37 @@
 {
+  "source_video_sha256": "replace-with-current-video-sha256",
+  "reviewer": "reviewer name",
+  "reviewed_at": "2026-01-01T00:00:00Z",
   "heroes": [{
-    "image_id": "img01", "hero_subject": "", "hero_subject_role": "interviewee",
-    "chosen_hero_time": 0, "candidates": [{"time": 0, "note": ""}]
+    "image_id": "img01",
+    "hero_subject": "speaker name",
+    "hero_subject_role": "interviewee",
+    "chosen_hero_time": 4,
+    "chosen_reason": "人物清晰、构图稳定且与主题相关",
+    "candidates": [
+      {"time": 1, "artifact": "audit/frames/img01/hero-01.jpg", "sha256": "replace-with-sha256"},
+      {"time": 2, "artifact": "audit/frames/img01/hero-02.jpg", "sha256": "replace-with-sha256"},
+      {"time": 3, "artifact": "audit/frames/img01/hero-03.jpg", "sha256": "replace-with-sha256"},
+      {"time": 4, "artifact": "audit/frames/img01/hero-04.jpg", "sha256": "replace-with-sha256"},
+      {"time": 5, "artifact": "audit/frames/img01/hero-05.jpg", "sha256": "replace-with-sha256"},
+      {"time": 6, "artifact": "audit/frames/img01/hero-06.jpg", "sha256": "replace-with-sha256"},
+      {"time": 7, "artifact": "audit/frames/img01/hero-07.jpg", "sha256": "replace-with-sha256"},
+      {"time": 8, "artifact": "audit/frames/img01/hero-08.jpg", "sha256": "replace-with-sha256"}
+    ]
   }],
   "images": [{
-    "image_id": "img01", "rows": [{
-      "quote_id": "img01-q01", "chosen_frame_time": 0,
-      "candidates": [{"time": 0, "note": ""}]
+    "image_id": "img01",
+    "rows": [{
+      "quote_id": "img01-q01",
+      "chosen_frame_time": 4,
+      "chosen_reason": "表情自然且背景不干扰文字",
+      "candidates": [
+        {"time": 2, "artifact": "audit/frames/img01/img01-q01-01.jpg", "sha256": "replace-with-sha256"},
+        {"time": 3, "artifact": "audit/frames/img01/img01-q01-02.jpg", "sha256": "replace-with-sha256"},
+        {"time": 4, "artifact": "audit/frames/img01/img01-q01-03.jpg", "sha256": "replace-with-sha256"},
+        {"time": 5, "artifact": "audit/frames/img01/img01-q01-04.jpg", "sha256": "replace-with-sha256"},
+        {"time": 6, "artifact": "audit/frames/img01/img01-q01-05.jpg", "sha256": "replace-with-sha256"}
+      ]
     }]
   }]
 }

@@ -5,14 +5,14 @@
     {
       "quote_id": "01-01",
       "risk_tags": ["politics"],
-      "source_en": "",
-      "current_cn": "",
+      "source_en": "exact source sentence",
+      "current_cn": "已核对的中文译文",
       "challenge": "这句是否把说话人的观点写成了独立事实？是否丢失主语、否定、限定语或因果范围？",
       "evidence": ["source_time", "source_subs", "asr_report"],
       "decision": "retain",
       "revision": "",
-      "reviewer": "",
-      "reviewed_at": ""
+      "reviewer": "reviewer name",
+      "reviewed_at": "2026-01-01T00:00:00Z"
     }
   ]
 }

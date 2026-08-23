@@ -63,6 +63,57 @@ class LocateQuotesTests(unittest.TestCase):
             flat, index = build_index(cues)
             self.assertEqual(find_cue(flat, index, "hello world").start, 1.0)
 
+    def test_cross_cue_output_records_last_cue_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            subs = tmp / "sample.srt"
+            subs.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n2\n00:00:02,000 --> 00:00:03,500\nworld\n", encoding="utf-8")
+            quotes = tmp / "quotes.json"
+            quotes.write_text(json.dumps({"images": [{"id": "i", "title": "t", "quotes": [
+                {"quote_id": "q", "match": "hello world", "en": "", "cn": ""}
+            ]}]}), encoding="utf-8")
+            out = tmp / "spec.json"
+            subprocess.run([sys.executable, str(ROOT / "scripts/locate_quotes.py"),
+                            str(subs), str(quotes), "-o", str(out)], check=True)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["images"][0]["quotes"][0]["cue_end"], 3.5)
+
+    def test_ambiguous_repeated_phrase_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            subs = tmp / "sample.srt"
+            subs.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello world\n\n2\n00:00:05,000 --> 00:00:06,000\nHello world\n", encoding="utf-8")
+            quotes = tmp / "quotes.json"
+            quotes.write_text(json.dumps({"images": [{"id": "i", "title": "t", "quotes": [
+                {"quote_id": "q", "match": "hello world", "en": "", "cn": ""}
+            ]}]}), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/locate_quotes.py"),
+                                     str(subs), str(quotes), "-o", str(tmp / "spec.json")],
+                                    capture_output=True, text=True, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("occurrence", result.stderr)
+
+    def test_occurrence_selects_requested_repeated_phrase(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            subs = tmp / "sample.srt"
+            subs.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello world\n\n2\n00:00:05,000 --> 00:00:06,000\nHello world\n", encoding="utf-8")
+            quotes = tmp / "quotes.json"
+            quotes.write_text(json.dumps({"images": [{"id": "i", "title": "t", "quotes": [
+                {"quote_id": "q", "match": "hello world", "occurrence": 2, "en": "", "cn": ""}
+            ]}]}), encoding="utf-8")
+            out = tmp / "spec.json"
+            subprocess.run([sys.executable, str(ROOT / "scripts/locate_quotes.py"),
+                            str(subs), str(quotes), "-o", str(out)], check=True)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["images"][0]["quotes"][0]["time"], 5.0)
+
+    def test_raw_subtitle_case_is_preserved_for_proper_nouns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.srt"
+            path.write_text("1\n00:00:01,000 --> 00:00:02,000\nAlice visited Paris\n", encoding="utf-8")
+            cue = load_cues(path)[0]
+            self.assertEqual(cue.text, "alice visited paris")
+            self.assertEqual(cue.raw_text, "Alice visited Paris")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,49 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["heroes", "images"],
-  "properties": {"heroes": {"type": "array", "items": {"type": "object", "required": ["image_id", "hero_subject", "hero_subject_role", "chosen_hero_time", "candidates"]}}, "images": {"type": "array", "items": {"type": "object", "required": ["image_id", "rows"], "properties": {"rows": {"type": "array", "items": {"type": "object", "required": ["quote_id", "chosen_frame_time", "candidates"]}}}}}}
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["source_video_sha256", "reviewer", "reviewed_at", "heroes", "images"],
+  "properties": {
+    "source_video_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "reviewer": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "heroes": {"type": "array", "items": {
+      "type": "object",
+      "required": ["image_id", "hero_subject", "hero_subject_role", "chosen_hero_time", "chosen_reason", "candidates"],
+      "properties": {
+        "image_id": {"type": ["string", "integer"]},
+        "hero_subject": {"type": "string", "minLength": 1},
+        "hero_subject_role": {"enum": ["interviewer", "interviewee", "speaker", "narrator", "subject"]},
+        "chosen_hero_time": {"type": "number", "minimum": 0},
+        "chosen_reason": {"type": "string", "minLength": 1},
+        "candidates": {"type": "array", "minItems": 8, "items": {"$ref": "#/$defs/candidate"}}
+      }
+    }},
+    "images": {"type": "array", "items": {
+      "type": "object", "required": ["image_id", "rows"],
+      "properties": {
+        "image_id": {"type": ["string", "integer"]},
+        "rows": {"type": "array", "items": {
+          "type": "object",
+          "required": ["quote_id", "chosen_frame_time", "chosen_reason", "candidates"],
+          "properties": {
+            "quote_id": {"type": ["string", "integer"]},
+            "chosen_frame_time": {"type": "number", "minimum": 0},
+            "chosen_reason": {"type": "string", "minLength": 1},
+            "candidates": {"type": "array", "minItems": 5, "items": {"$ref": "#/$defs/candidate"}}
+          }
+        }}
+      }
+    }}
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "required": ["time", "artifact", "sha256"],
+      "properties": {
+        "time": {"type": "number", "minimum": 0},
+        "artifact": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    }
+  }
 }

@@ -22,6 +22,15 @@ class Cue:
     start: float
     end: float
     text: str
+    raw_text: str
+
+
+@dataclass(frozen=True)
+class MatchSpan:
+    start_cue: Cue
+    end_cue: Cue
+    start_position: int
+    end_position: int
 
 
 def seconds(value: str) -> float:
@@ -53,13 +62,14 @@ def load_cues(path: str | Path) -> list[Cue]:
         match = TIMING.fullmatch(lines[timing_index].strip())
         if not match:
             continue
-        text = normalize_text(" ".join(lines[timing_index + 1 :]))
+        raw_text = html.unescape(re.sub(r"<[^>]+>", " ", " ".join(lines[timing_index + 1 :])))
+        text = normalize_text(raw_text)
         if not text:
             continue
         start, end = seconds(match.group("start")), seconds(match.group("end"))
         if end <= start:
             raise SystemExit(f"字幕 cue 结束时间不大于开始时间：{lines[timing_index]}")
-        cues.append(Cue(start=start, end=end, text=text))
+        cues.append(Cue(start=start, end=end, text=text, raw_text=raw_text))
     if not cues:
         raise SystemExit(f"没从 {path} 解析出任何 SRT/WebVTT 字幕行")
     return cues
@@ -76,19 +86,37 @@ def build_index(cues: list[Cue]) -> tuple[str, list[Cue]]:
     return " ".join(parts), index
 
 
-def find_cue(flat: str, index: list[Cue], phrase: str, after: float = 0.0) -> Cue | None:
+def find_spans(
+    flat: str,
+    index: list[Cue],
+    phrase: str,
+    *,
+    after_position: int = 0,
+    after_time: float | None = None,
+    before_time: float | None = None,
+) -> list[MatchSpan]:
     needle = normalize_text(phrase)
     if not needle:
-        return None
-    position = 0
+        return []
+    spans: list[MatchSpan] = []
+    position = max(0, after_position)
     while True:
         position = flat.find(needle, position)
         if position < 0:
-            return None
-        cue = index[min(position, len(index) - 1)]
-        if cue.start >= after:
-            return cue
+            return spans
+        end_position = position + len(needle)
+        start_cue = index[min(position, len(index) - 1)]
+        end_cue = index[min(end_position - 1, len(index) - 1)]
+        if ((after_time is None or start_cue.start >= after_time)
+                and (before_time is None or end_cue.end <= before_time)):
+            spans.append(MatchSpan(start_cue, end_cue, position, end_position))
         position += 1
+
+
+def find_cue(flat: str, index: list[Cue], phrase: str, after: float = 0.0) -> Cue | None:
+    """Compatibility helper for callers that only need the first matching cue."""
+    spans = find_spans(flat, index, phrase, after_time=after)
+    return spans[0].start_cue if spans else None
 
 
 def atomic_write_json(path: Path, data: dict) -> None:
@@ -126,35 +154,69 @@ def main() -> None:
             raise SystemExit(f"第 {image_index} 组没有 quotes")
         items = []
         image_missing = False
-        cursor = 0.0
+        cursor_position = 0
         for quote_index, quote in enumerate(image["quotes"], 1):
             phrase = str(quote.get("match", ""))
-            cue = find_cue(flat, index, phrase, after=cursor) or find_cue(flat, index, phrase)
-            if cue is None:
+            quote_id = str(quote.get("quote_id", "")).strip()
+            if not quote_id:
+                raise SystemExit(f"第 {image_index} 组第 {quote_index} 条缺少稳定 quote_id")
+            after_time = quote.get("after_time")
+            before_time = quote.get("before_time")
+            occurrence = quote.get("occurrence")
+            spans = find_spans(
+                flat,
+                index,
+                phrase,
+                after_position=cursor_position,
+                after_time=float(after_time) if after_time is not None else None,
+                before_time=float(before_time) if before_time is not None else None,
+            )
+            if occurrence is not None:
+                if not isinstance(occurrence, int) or occurrence < 1:
+                    raise SystemExit(f"{quote_id}: occurrence 必须是从 1 开始的整数")
+                all_spans = find_spans(
+                    flat,
+                    index,
+                    phrase,
+                    after_time=float(after_time) if after_time is not None else None,
+                    before_time=float(before_time) if before_time is not None else None,
+                )
+                spans = [all_spans[occurrence - 1]] if occurrence <= len(all_spans) else []
+            if not spans:
                 missing.append((str(image.get("title", image_index)), phrase))
                 image_missing = True
                 continue
-            timestamp = min(cue.end, cue.start + args.settle)
+            if len(spans) > 1:
+                times = ", ".join(f"{span.start_cue.start:.3f}s" for span in spans[:8])
+                raise SystemExit(
+                    f"{quote_id}: 字幕中存在 {len(spans)} 个候选位置（{times}）。"
+                    "请在 quotes.json 增加 occurrence、after_time 或 before_time，禁止猜测。"
+                )
+            span = spans[0]
+            timestamp = min(span.start_cue.end, span.start_cue.start + args.settle)
             entry = dict(quote)
             entry.update({
-                "quote_id": str(quote.get("quote_id") or f"img{image_index:02d}-q{quote_index:02d}"),
+                "quote_id": quote_id,
                 "time": round(timestamp, 3),
-                "cue_start": round(cue.start, 3),
-                "cue_end": round(cue.end, 3),
+                "cue_start": round(span.start_cue.start, 3),
+                "cue_end": round(span.end_cue.end, 3),
                 "time_basis": "cue_start" if args.settle == 0 else f"cue_start+{args.settle:g}s",
                 "match": phrase,
-                "source_en": quote.get("source_en", phrase),
+                "source_en": phrase,
                 "en": quote.get("en", phrase),
                 "cn": quote.get("cn", ""),
             })
             items.append(entry)
-            cursor = cue.start
+            cursor_position = span.end_position
 
         if image_missing:
             continue
         items.sort(key=lambda item: (item["time"], item["quote_id"]))
         compiled = dict(image)
-        compiled["id"] = str(image.get("id") or f"img{image_index:02d}")
+        image_id = str(image.get("id", "")).strip()
+        if not image_id:
+            raise SystemExit(f"第 {image_index} 组缺少稳定 image.id")
+        compiled["id"] = image_id
         compiled["quotes"] = items
         if "hero_time" not in compiled:
             compiled["hero_time"] = items[0]["time"]

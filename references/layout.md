@@ -12,7 +12,7 @@
 
 ## 烧录字幕
 
-渲染前抽查多个时刻：
+渲染前使用 `extract_subtitle_audit.py` 保存至少三个时刻的原帧和处理帧，并逐张记录结论：
 
 - `verified-absent`：确认原画面没有烧录文字。
 - `cropped`：原字幕位于底部，使用 `--source-crop-bottom` 从所有真实帧中裁掉该区域并在原尺寸复核。
@@ -22,8 +22,8 @@
 
 ## 真实帧
 
-`time` 记录引用来源，`frame_time` 记录画面。每句围绕来源时间至少比较 5 帧；头图在相关主题宽窗口至少比较 8 帧。候选和最终选择必须写入 `frame_audit.json`，preflight 会核对选择是否属于候选集合且与 spec 一致。
+`time` 记录引用来源，`frame_time` 记录画面。每句围绕来源时间至少比较 5 帧；头图在相关主题宽窗口至少比较 8 帧。使用 `extract_frame_candidates.py` 保存候选图片、时间和哈希；人工填写选择理由并让最终选择与 spec 一致。独立选择后的数值可以等于 `time`。
 
 ## 品牌
 
-默认使用版本库内 `assets/brand`，确保不同机器输出一致。只有用户明确指定其他品牌资产时才用 `--logo-dir`。品牌图必须写入独立 `branded/`，并为每张输出品牌证据 JSON。
+默认使用版本库内 `assets/brand`，确保不同机器输出一致。只有用户明确指定其他品牌资产时才用 `--logo-dir`。默认交付模式是 `branding=required`：品牌图必须写入独立 `branded/`，并为每张输出包含源图、输出、字体、render 和品牌资产哈希的证据 JSON。只有显式 `branding=none` 才能无品牌交付。

@@ -192,9 +192,18 @@ def main():
             "source_sha256": sha256(a.src), "output_sha256": sha256(out),
             "icon_sha256": sha256(L / "cat-circle.webp"),
             "wordmark_sha256": sha256(L / "wordmark.webp"),
-            "latin_font": LATIN, "render_metadata": str(rp) if R else None,
+            "latin_font": LATIN, "latin_font_sha256": sha256(LATIN),
+            "render_metadata": str(rp) if R else None,
+            "render_sha256": sha256(rp) if R else None,
             "icon_box": [ix, iy, icon.width, icon.height],
             "wordmark_box": [wx, wy, lock.width, lock.height],
+            "parameters": {
+                "margin": margin, "hero_fraction": hero_frac, "icon_h": a.icon_h,
+                "ink": a.ink, "halo": a.halo, "word_h": a.word_h,
+                "word_gap": a.word_gap, "word_ink": a.word_ink,
+                "word_halo": a.word_halo, "no_at": a.no_at,
+                "blur": a.blur, "spread": a.spread,
+            },
         }
         meta_path = Path(a.metadata)
         meta_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
-  "required": ["width", "height", "source_subtitle_policy", "fonts", "spec_sha256", "source_video_sha256", "outputs", "warnings"],
-  "properties": {"width": {"const": 1440}, "height": {"const": 1920}, "source_subtitle_policy": {"enum": ["verified-absent", "cropped"]}, "fonts": {"type": "object", "required": ["cjk_bold", "cjk_regular", "latin"]}, "spec_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "source_video_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "outputs": {"type": "array", "minItems": 1}, "warnings": {"type": "array", "maxItems": 0}}
+  "required": ["width", "height", "source_subtitle_policy", "fonts", "font_sha256", "renderer_sha256", "config", "spec_sha256", "source_video_sha256", "outputs", "warnings"],
+  "properties": {"width": {"const": 1440}, "height": {"const": 1920}, "source_subtitle_policy": {"enum": ["verified-absent", "cropped"]}, "fonts": {"type": "object", "required": ["cjk_bold", "cjk_regular", "latin"]}, "font_sha256": {"type": "object", "required": ["cjk_bold", "cjk_regular", "latin"], "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}, "renderer_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "config": {"type": "object", "minProperties": 10}, "spec_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "source_video_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "outputs": {"type": "array", "minItems": 1}, "warnings": {"type": "array", "maxItems": 0}}
 }

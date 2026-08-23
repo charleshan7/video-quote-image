@@ -2,6 +2,11 @@
   "meta": {"kicker": "", "footer": "", "risk_flags": []},
   "images": [{
     "id": "img01", "title": "", "structure": "", "core_quote_index": 0,
+    "hero_subject_id": "person-01", "hero_subject": "verified name",
+    "hero_subject_role": "interviewee",
+    "hero_subject_source_url": "https://example.com/official-source",
+    "hero_subject_source_quote": "source text that supports this identity",
+    "hero_subject_confidence": 0.9,
     "quotes": [{"quote_id": "img01-q01", "match": "exact subtitle text", "en": "", "cn": ""}]
   }]
 }

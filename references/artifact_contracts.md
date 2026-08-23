@@ -4,7 +4,7 @@
 
 ```text
 PROJECT/
-  source/source.mkv
+  source/source.<actual-ext>   # 以 source_download.json.media_path 为准
   source/source_download.json
   audit/quotes.json
   audit/spec.json
@@ -17,9 +17,14 @@ PROJECT/
   audit/round3_adjudication.json
   audit/people.json
   audit/frame_audit.json
+  audit/frames/...            # 候选帧证据
+  audit/subtitle_audit.json
+  audit/subtitle_samples/...  # 原帧与处理帧抽样
   audit/render.json
+  audit/brand/*.json
   audit/red_team.json          # 风险触发时
   audit/release_manifest.json
+  audit/release_attestation.json
   images/
   branded/
   xiaohongshu_package.md
@@ -35,4 +40,4 @@ JSON 结构以 `schemas/*.schema.json` 和 `templates/` 为准。稳定键为 `i
 
 除 draft 产物外，还需要 selection、四轮 translation、ASR JSON、people、frame audit、发布包、manifest 和 ZIP。风险标签触发时必须有逐句 red-team 决策。
 
-Manifest 对所有关键 artifact 和图片做 SHA-256。preflight 会检查当前文件哈希、render/spec/video 绑定、选帧候选、ZIP 安全路径及 ZIP 内成员哈希。ZIP 路径必须同时与 CLI 和 manifest 一致。
+`package_release.py` 对所有关键 artifact、候选帧、字幕抽样、基础图、品牌图和品牌证据做 SHA-256，并把 manifest 本身放入 ZIP。外部 attestation 绑定 ZIP 与 manifest 哈希。preflight 要求 ZIP 成员集合精确相等，拒绝额外、重复、加密、符号链接和不安全路径。ZIP 路径必须同时与 CLI、manifest 和 attestation 一致。

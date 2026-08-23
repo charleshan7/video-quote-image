@@ -1,0 +1,12 @@
+{
+  "source_video_sha256": "replace-with-current-video-sha256",
+  "policy": "verified-absent",
+  "crop_bottom": 0,
+  "reviewer": "reviewer name",
+  "reviewed_at": "2026-01-01T00:00:00Z",
+  "samples": [
+    {"time": 10, "source_artifact": "audit/subtitle_samples/sample-01-source.jpg", "source_sha256": "replace-with-sha256", "processed_artifact": "audit/subtitle_samples/sample-01-processed.jpg", "processed_sha256": "replace-with-sha256", "decision": "absent"},
+    {"time": 20, "source_artifact": "audit/subtitle_samples/sample-02-source.jpg", "source_sha256": "replace-with-sha256", "processed_artifact": "audit/subtitle_samples/sample-02-processed.jpg", "processed_sha256": "replace-with-sha256", "decision": "absent"},
+    {"time": 30, "source_artifact": "audit/subtitle_samples/sample-03-source.jpg", "source_sha256": "replace-with-sha256", "processed_artifact": "audit/subtitle_samples/sample-03-processed.jpg", "processed_sha256": "replace-with-sha256", "decision": "absent"}
+  ]
+}

@@ -39,12 +39,12 @@ except ImportError:
     FFMPEG = shutil.which("ffmpeg") or sys.exit("找不到 ffmpeg")
 
 # 字幕常写阿拉伯数字、ASR 常写英文单词，不对齐就会把 "2" vs "two" 报成数字不一致
-NUM = {"zero":"0","one":"1","two":"2","three":"3","four":"4","five":"5","six":"6",
-       "seven":"7","eight":"8","nine":"9","ten":"10","eleven":"11","twelve":"12",
-       "thirteen":"13","fourteen":"14","fifteen":"15","sixteen":"16","seventeen":"17",
-       "eighteen":"18","nineteen":"19","twenty":"20","thirty":"30","forty":"40",
-       "fifty":"50","sixty":"60","seventy":"70","eighty":"80","ninety":"90",
-       "hundred":"100","thousand":"1000","million":"1000000","billion":"1000000000"}
+NUM = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+       "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+       "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+       "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40,
+       "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+SCALES = {"thousand": 1000, "million": 1000000, "billion": 1000000000}
 
 NEG = {"not", "no", "never", "none", "nothing", "nobody", "cannot", "cant", "dont",
        "doesnt", "didnt", "wont", "wouldnt", "shouldnt", "isnt", "arent", "wasnt"}
@@ -52,7 +52,33 @@ FILLER = {"uh", "um", "uhh", "umm", "mm", "mhm", "hmm", "ah", "oh", "er", "eh"}
 
 
 def norm(text):
-    return [NUM.get(w, w) for w in re.sub(r"[^\w\s']", " ", text.lower()).split()]
+    normalized = text.lower().replace("'", "").replace("’", "")
+    words = re.sub(r"[^\w\s]", " ", normalized).split()
+    output = []
+    index = 0
+    while index < len(words):
+        if words[index] not in NUM and words[index] not in SCALES and words[index] != "hundred":
+            output.append(words[index])
+            index += 1
+            continue
+        total = current = 0
+        while index < len(words):
+            word = words[index]
+            if word in NUM:
+                current += NUM[word]
+            elif word == "hundred":
+                current = max(1, current) * 100
+            elif word in SCALES:
+                total += max(1, current) * SCALES[word]
+                current = 0
+            elif word == "and" and current:
+                index += 1
+                continue
+            else:
+                break
+            index += 1
+        output.append(str(total + current))
+    return output
 
 
 def contains(hay, needle):
@@ -101,7 +127,7 @@ def verify(video, seg, rt, i1, i2, at, j1, j2, pad, cmds, workdir):
 
 def srt_window(cues, t0, t1):
     """取 [t0,t1] 覆盖到的字幕原文。"""
-    return " ".join(cue.text for cue in cues if cue.end >= t0 and cue.start <= t1)
+    return " ".join(cue.raw_text for cue in cues if cue.end >= t0 and cue.start <= t1)
 
 
 def file_sha256(path):
@@ -185,6 +211,18 @@ def main():
     ap.add_argument("--no-verify", action="store_true", help="不自动复核高危分歧")
     ap.add_argument("--report", default="asr-xcheck.md")
     ap.add_argument("--report-json", default="asr-xcheck.json")
+    ap.add_argument("--primary-engine", default="youtube-auto/google-asr")
+    ap.add_argument("--primary-model", default="platform-auto-captions")
+    ap.add_argument("--primary-version", default="unknown")
+    ap.add_argument("--primary-family", default="google-asr",
+                    choices=["whisper", "elevenlabs-scribe", "google-asr", "deepgram", "assemblyai"])
+    ap.add_argument("--second-engine", help="第二来源引擎名称；生成完成报告时必填")
+    ap.add_argument("--second-model", help="第二来源模型名称；生成完成报告时必填")
+    ap.add_argument("--second-version", default="unknown")
+    ap.add_argument("--second-family",
+                    choices=["whisper", "elevenlabs-scribe", "google-asr", "deepgram", "assemblyai"])
+    ap.add_argument("--allow-unverified-transcripts", action="store_true",
+                    help="允许 diff-only 使用没有可信 sidecar 的文本；只可生成草稿证据")
     a = ap.parse_args()
 
     if not a.diff_only and not has_audio(a.video):
@@ -237,11 +275,26 @@ def main():
         print("  …")
         return
 
+    if not a.second_engine or not a.second_model or not a.second_family:
+        raise SystemExit("生成 ASR 完成报告必须给出 --second-engine、--second-model 和 --second-family")
+
     rows, missing, low = [], 0, 0
+    provenance_verified = True
     for s in segs:
-        if not s["txt"].exists():
+        if not s["txt"].exists() or not s["txt"].read_text(encoding="utf-8").strip():
             missing += 1
             continue
+        if a.diff_only:
+            meta_path = s["txt"].with_suffix(".meta.json")
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 - absent or malformed provenance is unverified
+                meta = {}
+            expected_wav_hash = file_sha256(s["wav"]) if s["wav"].exists() else None
+            if (not expected_wav_hash or meta.get("wav_sha256") != expected_wav_hash
+                    or str(meta.get("provider", "")).lower() not in a.second_engine.lower()
+                    or str(meta.get("model", "")) != a.second_model):
+                provenance_verified = False
         asr = s["txt"].read_text(encoding="utf-8")
         ref = srt_window(cues, s["t0"], s["t0"] + s["dur"])
         rt, at = norm(ref), norm(asr)
@@ -298,15 +351,22 @@ def main():
             lines.append(f"- **复核: {r['verdict']}** — {r['vnote']}")
     Path(a.report).write_text("\n".join(lines), encoding="utf-8")
     report_json = {
-        "status": "complete" if missing == 0 else "incomplete",
+        "status": "complete" if missing == 0 and provenance_verified else "incomplete",
         "source_video": str(Path(a.video).resolve()),
         "source_video_sha256": file_sha256(a.video),
         "subtitles": str(Path(a.subs).resolve()),
         "subtitles_sha256": file_sha256(a.subs),
+        "primary_engine": {"name": a.primary_engine, "model": a.primary_model,
+                           "version": a.primary_version, "family": a.primary_family},
+        "second_engine": {"name": a.second_engine, "model": a.second_model,
+                          "version": a.second_version, "family": a.second_family},
+        "transcript_provenance_verified": provenance_verified,
         "segment_count": len(segs), "missing_count": missing,
         "high_risk_count": hi, "difference_count": len(rows),
         "segments": [{"id": s["id"], "quote_time": s["t"], "image": s["img"],
                       "quote_id": s["quote_id"],
+                      "wav_sha256": file_sha256(s["wav"]) if s["wav"].exists() else None,
+                      "transcript_sha256": file_sha256(s["txt"]) if s["txt"].exists() else None,
                       "result_present": s["txt"].exists()} for s in segs],
         "rows": [{
             "quote_id": s["quote_id"], "source_en": s["source_en"],
@@ -319,6 +379,11 @@ def main():
     }
     Path(a.report_json).write_text(json.dumps(report_json, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"→ {a.report}：{len(segs)} 段，分歧 {len(rows)} 处（高 {hi}），噪声滤除 {low} 处")
+    if not provenance_verified and not a.allow_unverified_transcripts:
+        raise SystemExit(
+            "diff-only 的一个或多个转写缺少匹配当前 WAV、引擎和模型的 .meta.json；"
+            "拒绝把旧文本当成完成证据"
+        )
     if missing:
         raise SystemExit(f"有 {missing} 段缺少 ASR 结果；不能作为完成证据")
 

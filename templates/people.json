@@ -1,6 +1,8 @@
 {
   "people": [{
-    "name": "", "person_type": "interviewee", "role": "", "source_url": "",
-    "source_quote": "", "verified_at": "", "confidence": 0.9
+    "person_id": "person-01", "name": "verified name", "person_type": "interviewee",
+    "role": "verified role", "source_url": "https://example.com/official-source",
+    "source_quote": "source text that supports this identity",
+    "verified_at": "2026-01-01T00:00:00Z", "confidence": 0.9
   }]
 }

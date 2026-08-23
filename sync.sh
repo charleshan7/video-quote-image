@@ -61,6 +61,21 @@ rsync "${RSYNC_ARGS[@]}" "$SRC/" "$ROOT/"
 find "$ROOT" -type d -name '__pycache__' -prune -exec rm -rf {} +
 find "$ROOT" -type d -name '.venv' -prune -exec rm -rf {} +
 
+VQI_PY="$SRC/.venv/bin/python"
+[ -x "$VQI_PY" ] || {
+  echo "找不到事实源开发环境：$VQI_PY"
+  echo "先运行 uv venv --python 3.11 $SRC/.venv"
+  echo "再运行 uv pip install --python $VQI_PY -r $SRC/requirements-dev.txt"
+  exit 1
+}
+
+"$VQI_PY" scripts/doctor.py --mode maintain
+"$VQI_PY" scripts/validate_skill.py .
+"$VQI_PY" -m compileall -q scripts tests
+"$VQI_PY" -m ruff check scripts tests
+for file in schemas/*.json templates/*.json; do "$VQI_PY" -m json.tool "$file" >/dev/null; done
+"$VQI_PY" -m unittest discover -s tests -v
+
 git add -A -- . ':(exclude)README.md' ':(exclude)docs/**' ':(exclude)sync.sh' ':(exclude).github/**'
 git diff --cached --quiet && {
   echo "没有变化"

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status", "source_video_sha256", "subtitles_sha256", "primary_engine",
+    "second_engine", "transcript_provenance_verified", "segment_count",
+    "missing_count", "segments", "rows"
+  ],
+  "properties": {
+    "status": {"const": "complete"},
+    "source_video_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "subtitles_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "primary_engine": {"$ref": "#/$defs/engine"},
+    "second_engine": {"$ref": "#/$defs/engine"},
+    "transcript_provenance_verified": {"const": true},
+    "segment_count": {"type": "integer", "minimum": 1},
+    "missing_count": {"const": 0},
+    "segments": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["quote_id", "quote_time", "wav_sha256", "transcript_sha256", "result_present"],
+        "properties": {
+          "quote_id": {"type": "string", "minLength": 1},
+          "quote_time": {"type": "number", "minimum": 0},
+          "wav_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "transcript_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "result_present": {"const": true}
+        }
+      }
+    },
+    "rows": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["quote_id", "source_en", "second_source", "severity"],
+        "properties": {
+          "quote_id": {"type": "string", "minLength": 1},
+          "source_en": {"type": "string", "minLength": 1},
+          "second_source": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["none", "low", "medium", "high"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "engine": {
+      "type": "object",
+      "required": ["name", "model", "version", "family"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "family": {
+          "enum": ["whisper", "elevenlabs-scribe", "google-asr", "deepgram", "assemblyai"]
+        }
+      }
+    }
+  }
+}

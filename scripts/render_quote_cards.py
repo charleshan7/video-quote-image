@@ -361,14 +361,46 @@ def main():
         raise SystemExit("policy=cropped 时必须给出大于 0 的 --source-crop-bottom")
     if args.source_subtitle_policy != "cropped" and args.source_crop_bottom:
         raise SystemExit("只有 policy=cropped 时才能使用 --source-crop-bottom")
+    for name, value in (("--band-focus", args.band_focus), ("--hero-focus", args.hero_focus)):
+        if not 0 <= value <= 1:
+            raise SystemExit(f"{name} 必须在 0–1")
+    for name, value in (("--band-dim", args.band_dim), ("--hero-dim", args.hero_dim),
+                        ("--shadow-opacity", args.shadow_opacity)):
+        if not 0 <= value <= 1:
+            raise SystemExit(f"{name} 必须在 0–1")
+    if not 0 <= args.auto_dim <= 255:
+        raise SystemExit("--auto-dim 必须在 0–255")
+    for name, value in (("--cn-size", args.cn_size), ("--en-size", args.en_size),
+                        ("--title-size", args.title_size), ("--margin", args.margin)):
+        if value <= 0:
+            raise SystemExit(f"{name} 必须为正数")
+
+    with open(args.spec, encoding="utf-8") as handle:
+        spec = json.load(handle)
+    if not isinstance(spec.get("images"), list) or not spec["images"]:
+        raise SystemExit("spec.images 不能为空")
+    for index, image in enumerate(spec["images"], 1):
+        if not image.get("quotes"):
+            raise SystemExit(f"第 {index} 张没有 quotes，已停止渲染")
+    meta = spec.get("meta", {})
 
     global CJK_BOLD, CJK_REG, LATIN
     CJK_BOLD = resolve_font("cjk_bold", args.cjk_bold_font)
     CJK_REG = resolve_font("cjk_regular", args.cjk_regular_font)
     LATIN = resolve_font("latin", args.latin_font)
-    assert_font_glyphs(CJK_BOLD, "中文金句", "cjk_bold")
-    assert_font_glyphs(CJK_REG, "人物访谈", "cjk_regular")
-    assert_font_glyphs(LATIN, "Quote 123", "latin")
+    bold_text = "".join(
+        str(image.get("title", "")) + "".join(str(q.get("cn", "")) for q in image.get("quotes", []))
+        for image in spec["images"]
+    )
+    regular_text = str(meta.get("kicker", ""))
+    latin_text = str(meta.get("footer", "")) + "0123456789:"
+    latin_text += "".join(
+        str(q.get("en", "")) for image in spec["images"] for q in image.get("quotes", [])
+    )
+    assert_font_glyphs(CJK_BOLD, bold_text, "cjk_bold")
+    if regular_text:
+        assert_font_glyphs(CJK_REG, regular_text, "cjk_regular")
+    assert_font_glyphs(LATIN, latin_text, "latin")
 
     W = args.width
     H = round(W * ah / aw)
@@ -386,14 +418,6 @@ def main():
            "auto_dim": args.auto_dim,
            "source_crop_bottom": args.source_crop_bottom}
 
-    with open(args.spec, encoding="utf-8") as handle:
-        spec = json.load(handle)
-    if not isinstance(spec.get("images"), list) or not spec["images"]:
-        raise SystemExit("spec.images 不能为空")
-    for index, image in enumerate(spec["images"], 1):
-        if not image.get("quotes"):
-            raise SystemExit(f"第 {index} 张没有 quotes，已停止渲染")
-    meta = spec.get("meta", {})
     check_complete(args.video, spec)      # 片子不完整就停在这里，别出图
     out_dir = Path(args.out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
@@ -449,6 +473,11 @@ def main():
         "source_subtitle_policy": args.source_subtitle_policy,
         "source_crop_bottom": args.source_crop_bottom,
         "fonts": {"cjk_bold": CJK_BOLD, "cjk_regular": CJK_REG, "latin": LATIN},
+        "font_sha256": {"cjk_bold": sha256(CJK_BOLD), "cjk_regular": sha256(CJK_REG),
+                        "latin": sha256(LATIN)},
+        "renderer_sha256": sha256(__file__),
+        "config": {"width": W, "height": H, "aspect": args.aspect,
+                   "hero_fraction": args.hero_fraction, **cfg},
         "spec_sha256": sha256(args.spec), "source_video_sha256": sha256(args.video),
         "outputs": [{"image_id": str(image.get("id", index + 1)),
                      "filename": path.name, "sha256": sha256(path)}

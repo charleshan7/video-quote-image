@@ -23,7 +23,7 @@ Skill 采用五层标准：
 ```bash
 uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python -r requirements-tools.txt
-.venv/bin/python scripts/doctor.py
+.venv/bin/python scripts/doctor.py --mode download
 ```
 
 下载与来源证据：
@@ -40,10 +40,19 @@ uv pip install --python .venv/bin/python -r requirements-tools.txt
   -o PROJECT/audit/spec.json
 ```
 
-确认原片没有烧录字幕后渲染：
+引用文本存在多个字幕位置时，定位器会停止并要求用 `occurrence`、`after_time` 或 `before_time` 消歧。选帧和烧录字幕检查不再只接受文字声明，可先生成带哈希的候选证据：
 
 ```bash
-.venv/bin/python scripts/render_quote_cards.py PROJECT/source/source.mkv \
+.venv/bin/python scripts/extract_frame_candidates.py VIDEO \
+  --root PROJECT --reviewer "REVIEWER"
+.venv/bin/python scripts/extract_subtitle_audit.py VIDEO \
+  --root PROJECT --policy verified-absent --reviewer "REVIEWER"
+```
+
+逐张完成证据裁决后渲染；实际视频路径以 `source_download.json.media_path` 为准：
+
+```bash
+.venv/bin/python scripts/render_quote_cards.py VIDEO \
   --spec PROJECT/audit/spec.json --out-dir PROJECT/images \
   --render-json PROJECT/audit/render.json \
   --source-subtitle-policy verified-absent \
@@ -55,18 +64,19 @@ uv pip install --python .venv/bin/python -r requirements-tools.txt
 完成四轮校准、人物、选帧和发布包后：
 
 ```bash
-.venv/bin/python scripts/build_release_manifest.py \
-  --root PROJECT --status final --version v1 --zip ../release-v1.zip
+.venv/bin/python scripts/package_release.py \
+  --root PROJECT --status final --version v1 --zip ../release-v1.zip \
+  --branding required
 
 .venv/bin/python scripts/preflight.py \
-  --root PROJECT --video source/source.mkv --status final --zip ../release-v1.zip
+  --root PROJECT --video VIDEO --status final --zip ../release-v1.zip
 ```
 
-只有 preflight 退出 0、ZIP 成员哈希匹配，并且逐张查看过 1440×1920 原图，才能称为 reviewed/final。
+不带品牌时必须显式使用 `--branding none`。只有 preflight 退出 0、ZIP 成员集合精确匹配、manifest/attestation 哈希一致，并且逐张查看过 1440×1920 原图，才能称为 reviewed/final。
 
 ## 环境与 Manus
 
-Python 依赖不会安装系统字体或 `ffprobe`。`doctor.py` 会检查 Pillow、imageio-ffmpeg、jsonschema、yt-dlp、ffmpeg/ffprobe、curl、rsync 和跨平台字体。
+Python 依赖不会安装系统字体或 `ffprobe`。`doctor.py` 支持 `render`、`download`、`cloud-asr`、`maintain` 和 `full` 模式，只要求当前任务真正需要的外部工具。
 
 Manus 等 Linux 镜像如果预装 Noto CJK、FFmpeg 和 yt-dlp，可以直接通过检查；缺依赖时会明确停止，不会再静默生成方框字。完整流水线安装 `requirements-tools.txt`；需要本地 Whisper 时再安装 `requirements-asr.txt`。
 
@@ -75,11 +85,13 @@ ElevenLabs 适配器默认使用 Scribe v2，并要求显式 `--allow-cloud`，�
 ## 测试
 
 ```bash
+uv pip install --python .venv/bin/python -r requirements-dev.txt
+.venv/bin/python scripts/validate_skill.py .
 .venv/bin/python -m unittest discover -s tests -v
-uvx ruff check scripts tests
+.venv/bin/ruff check scripts tests
 ```
 
-CI 同时验证 Python 语法、JSON Schema/模板语法、VTT/SRT 时间定位、预检对账和运行环境。
+CI 在 Linux 与 macOS 上验证 Skill 结构、Python 语法、JSON、VTT/SRT 定位、中文字体、证据提取、渲染、品牌、确定性打包、篡改阻断和完整 final 交付。
 
 ## 同步维护
 
@@ -90,4 +102,4 @@ CI 同时验证 Python 语法、JSON Schema/模板语法、VTT/SRT 时间定位�
 ./sync.sh "说明"      # 同步、提交并推送 main
 ```
 
-正式同步要求工作区干净，并且只暂存 Skill 内容，避免把 README 或其他人工修改混入自动提交。
+正式同步要求工作区干净；同步脚本会在 commit/push 前运行环境检查、结构校验、静态检查、全部测试和 JSON 检查，并且只暂存 Skill 内容。

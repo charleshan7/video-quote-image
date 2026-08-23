@@ -89,10 +89,13 @@ def main():
 
     out = Path(f"{a.stem}.txt")
     out.write_text(d["text"], encoding="utf-8")
-    digest = hashlib.sha256(Path(a.wav).read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    with Path(a.wav).open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
     out.with_suffix(".meta.json").write_text(json.dumps({
         "provider": "elevenlabs", "model": a.model, "language_requested": a.lang or None,
-        "language_detected": d.get("language_code"), "wav_sha256": digest,
+        "language_detected": d.get("language_code"), "wav_sha256": digest.hexdigest(),
         "requested_at": datetime.now(timezone.utc).isoformat(), "status": "complete",
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"{out}  {d.get('audio_duration_secs', '?')}s  {d.get('language_code', '?')}")

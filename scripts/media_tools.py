@@ -93,24 +93,37 @@ def resolve_font(kind: str, explicit: str | None = None) -> str:
     )
 
 
-def assert_font_glyphs(path: str, sample: str, label: str) -> None:
-    """Reject fonts that cannot render the required script."""
+def assert_font_glyphs(path: str, sample: str, label: str, index: int = 0) -> None:
+    """Reject fonts whose cmap lacks any character that will actually be rendered.
+
+    A missing-glyph box is itself a non-empty Pillow mask, so getmask/getbbox is
+    not evidence of coverage. Reading the font cmap prevents a Latin-only font
+    from silently rendering every Chinese character as the same square.
+    """
+    import logging
+
+    from fontTools.ttLib import TTFont
     from PIL import ImageFont
 
     try:
-        font = ImageFont.truetype(path, 48)
-    except OSError as exc:
-        raise SystemExit(f"cannot load {label} font {path}: {exc}") from exc
-    missing = []
-    for char in sample:
-        if char.isspace():
-            continue
-        try:
-            mask = font.getmask(char)
-        except Exception:  # noqa: BLE001 - convert any glyph failure into a hard stop
-            missing.append(char)
-            continue
-        if mask.getbbox() is None:
-            missing.append(char)
+        logging.getLogger("fontTools").setLevel(logging.ERROR)
+        ImageFont.truetype(path, 48, index=index)
+        ttfont = TTFont(path, fontNumber=index, lazy=True)
+        cmap = ttfont.getBestCmap() or {}
+    except Exception as exc:
+        raise SystemExit(f"cannot load {label} font {path} (face {index}): {exc}") from exc
+    finally:
+        if "ttfont" in locals():
+            ttfont.close()
+
+    # str has no iscontrol() on supported Python versions; filter Unicode control
+    # characters explicitly while retaining punctuation and symbols used in copy.
+    import unicodedata
+    required = {char for char in sample if not char.isspace() and unicodedata.category(char)[0] != "C"}
+    missing = sorted({char for char in required if ord(char) not in cmap})
     if missing:
-        raise SystemExit(f"{label} font lacks required glyphs {missing}: {path}")
+        preview = "".join(missing[:12])
+        more = f" and {len(missing) - 12} more" if len(missing) > 12 else ""
+        raise SystemExit(
+            f"{label} font lacks required glyphs {preview!r}{more}: {path} (face {index})"
+        )

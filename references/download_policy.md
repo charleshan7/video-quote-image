@@ -1,6 +1,6 @@
 # 下载证据边界
 
-使用 `scripts/download_source.py` 请求 `bestvideo*+bestaudio/best`，合并为同时包含视频和音频的直接媒体，并保存来源页面、extractor、源 ID、yt-dlp 版本、格式 ID、流信息和文件哈希。
+使用 `scripts/download_source.py` 以 `--ignore-config` 请求 `bestvideo*+bestaudio/best`，避免宿主机全局配置改变选择；合并为同时包含视频和音频的直接媒体，并保存来源页面、extractor、源 ID、yt-dlp 版本、格式 ID、流信息、info JSON 和文件哈希。
 
 “最佳”只表示 yt-dlp 在执行时的账号、地区、Cookie 和权限条件下可见格式中的最佳选择。脚本不得声称已经证明其他访问条件下不存在更高质量版本。
 

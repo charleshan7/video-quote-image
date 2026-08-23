@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["source_video_sha256", "policy", "crop_bottom", "reviewer", "reviewed_at", "samples"],
+  "properties": {
+    "source_video_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "policy": {"enum": ["verified-absent", "cropped"]},
+    "crop_bottom": {"type": "number", "minimum": 0, "exclusiveMaximum": 0.5},
+    "reviewer": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "samples": {"type": "array", "minItems": 3, "items": {
+      "type": "object",
+      "required": ["time", "source_artifact", "source_sha256", "processed_artifact", "processed_sha256", "decision"],
+      "properties": {
+        "time": {"type": "number", "minimum": 0},
+        "source_artifact": {"type": "string", "minLength": 1},
+        "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "processed_artifact": {"type": "string", "minLength": 1},
+        "processed_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "decision": {"enum": ["absent", "cropped-out"]}
+      }
+    }}
+  }
+}

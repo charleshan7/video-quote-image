@@ -7,6 +7,12 @@
       "type": "object", "required": ["id", "title", "hero_time", "quotes"],
       "properties": {
         "id": {"type": ["string", "integer"]}, "title": {"type": "string", "minLength": 1}, "hero_time": {"type": "number", "minimum": 0},
+        "hero_subject_id": {"type": "string", "minLength": 1}, "hero_subject": {"type": "string", "minLength": 1},
+        "hero_subject_role": {"enum": ["interviewer", "interviewee", "speaker", "narrator", "subject"]},
+        "hero_subject_source_url": {"type": "string", "pattern": "^https://"},
+        "hero_subject_source_quote": {"type": "string", "minLength": 1},
+        "hero_subject_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "structure": {"type": "string", "minLength": 1}, "core_quote_index": {"type": "integer", "minimum": 0},
         "quotes": {"type": "array", "minItems": 1, "items": {
           "type": "object", "required": ["quote_id", "time", "match", "source_en", "en", "cn"],
           "properties": {"quote_id": {"type": ["string", "integer"]}, "time": {"type": "number", "minimum": 0}, "frame_time": {"type": "number", "minimum": 0}, "match": {"type": "string", "minLength": 1}, "source_en": {"type": "string", "minLength": 1}, "en": {"type": "string"}, "cn": {"type": "string"}}
