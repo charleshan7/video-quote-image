@@ -14,7 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from media_tools import assert_font_glyphs, resolve_font
+from media_tools import assert_font_glyphs, resolve_font, split_font_spec
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 try:
@@ -28,6 +28,7 @@ except ImportError:
 CJK_BOLD = ""
 CJK_REG = ""
 LATIN = ""
+HERO_BOLD = ""   # 主画面标题；默认跟随 CJK_BOLD
 
 # 主画面 footer 那行的版式：add_brand.py 靠它把字标锚到 footer 右侧，
 # 改这里要同步 render.json（渲染时自动写出，不用手抄）
@@ -97,11 +98,15 @@ def grab_frame(video, seconds):
             os.unlink(tmp)
 
 
-def font(path, size, index=0):
+def font(spec, size, index=None):
+    """spec 可以是 "路径" 或 "路径::face序号"；ttc 集合必须选对 face，否则会拿到别的字面。"""
+    path, spec_index = split_font_spec(spec)
+    if index is None:
+        index = spec_index
     try:
         return ImageFont.truetype(path, size, index=index)
     except OSError as exc:
-        raise SystemExit(f"字体加载失败，已停止渲染：{path}: {exc}") from exc
+        raise SystemExit(f"字体加载失败，已停止渲染：{path}(face {index}): {exc}") from exc
 
 
 def sha256(path):
@@ -272,7 +277,7 @@ def hero(video, t, title, w, h, meta, cfg):
         return img
     img = darken(img, cfg["hero_dim"])
     d = ImageDraw.Draw(img)
-    f_k, f_t, f_s = (font(CJK_REG, 30), font(CJK_BOLD, cfg["title_size"]),
+    f_k, f_t, f_s = (font(CJK_REG, 30), font(HERO_BOLD, cfg["title_size"]),
                      font(LATIN, FOOTER_SIZE))
     m = cfg["margin"]
     lines = wrap(d, title, f_t, w - m * 2)
@@ -336,9 +341,15 @@ def main():
     ap.add_argument("--no-rule", action="store_true", help="去掉条间分隔线")
     ap.add_argument("--no-hero-text", action="store_true",
                     help="主画面不叠标题，做成纯画面开场")
-    ap.add_argument("--cjk-bold-font")
+    ap.add_argument("--cjk-bold-font",
+                    help='正文中文字体；可写 "路径::face序号"（ttc 集合必须指定，否则可能拿到繁体字面）')
     ap.add_argument("--cjk-regular-font")
     ap.add_argument("--latin-font")
+    ap.add_argument("--hero-cjk-font",
+                    help="主画面标题单独用的字体；不传则跟随 --cjk-bold-font。"
+                         "首图要在信息流里跳出来时可以比正文重一档")
+    ap.add_argument("--force", action="store_true",
+                    help="输出目录非空时覆盖；用于渲染中途失败留下半成品目录后重跑")
     ap.add_argument("--source-subtitle-policy",
                     choices=["unknown", "verified-absent", "cropped"], default="unknown",
                     help="原片烧录字幕处理结论；unknown 会写入阻断性交付告警")
@@ -384,10 +395,13 @@ def main():
             raise SystemExit(f"第 {index} 张没有 quotes，已停止渲染")
     meta = spec.get("meta", {})
 
-    global CJK_BOLD, CJK_REG, LATIN
+    global CJK_BOLD, CJK_REG, LATIN, HERO_BOLD
     CJK_BOLD = resolve_font("cjk_bold", args.cjk_bold_font)
     CJK_REG = resolve_font("cjk_regular", args.cjk_regular_font)
     LATIN = resolve_font("latin", args.latin_font)
+    # 首图常要比正文更重一档：首图在信息流里要跳出来，正文要透气
+    HERO_BOLD = (resolve_font("cjk_bold", args.hero_cjk_font)
+                 if args.hero_cjk_font else CJK_BOLD)
     bold_text = "".join(
         str(image.get("title", "")) + "".join(str(q.get("cn", "")) for q in image.get("quotes", []))
         for image in spec["images"]
@@ -397,10 +411,16 @@ def main():
     latin_text += "".join(
         str(q.get("en", "")) for image in spec["images"] for q in image.get("quotes", [])
     )
-    assert_font_glyphs(CJK_BOLD, bold_text, "cjk_bold")
-    if regular_text:
-        assert_font_glyphs(CJK_REG, regular_text, "cjk_regular")
-    assert_font_glyphs(LATIN, latin_text, "latin")
+    # spec 可能带 ::face 序号，校验前要拆开，否则 TTFont 打不开这个路径
+    for spec_str, text, label in (
+        (CJK_BOLD, bold_text, "cjk_bold"),
+        (CJK_REG, regular_text, "cjk_regular"),
+        (LATIN, latin_text, "latin"),
+    ):
+        if not text:
+            continue
+        font_path, font_index = split_font_spec(spec_str)
+        assert_font_glyphs(font_path, text, label, index=font_index)
 
     W = args.width
     H = round(W * ah / aw)
@@ -420,8 +440,9 @@ def main():
 
     check_complete(args.video, spec)      # 片子不完整就停在这里，别出图
     out_dir = Path(args.out_dir)
-    if out_dir.exists() and any(out_dir.iterdir()):
-        sys.exit(f"{out_dir} 非空；换一个输出目录，不覆盖已有成品")
+    if out_dir.exists() and any(out_dir.iterdir()) and not args.force:
+        sys.exit(f"{out_dir} 非空；换一个输出目录，或加 --force 覆盖。\n"
+                 f"（渲染中途失败留下的半成品目录也会挡住重跑，那种情况直接 --force）")
     out_dir.mkdir(parents=True, exist_ok=True)
     if args.source_subtitle_policy == "unknown":
         warn("没有声明原片烧录字幕处理结论；先检查原片，再使用 verified-absent 或 cropped")
@@ -473,8 +494,10 @@ def main():
         "source_subtitle_policy": args.source_subtitle_policy,
         "source_crop_bottom": args.source_crop_bottom,
         "fonts": {"cjk_bold": CJK_BOLD, "cjk_regular": CJK_REG, "latin": LATIN},
-        "font_sha256": {"cjk_bold": sha256(CJK_BOLD), "cjk_regular": sha256(CJK_REG),
-                        "latin": sha256(LATIN)},
+        # 哈希要对字体文件本身算，spec 可能带 ::face 序号，不能直接当路径打开
+        "font_sha256": {"cjk_bold": sha256(split_font_spec(CJK_BOLD)[0]),
+                        "cjk_regular": sha256(split_font_spec(CJK_REG)[0]),
+                        "latin": sha256(split_font_spec(LATIN)[0])},
         "renderer_sha256": sha256(__file__),
         "config": {"width": W, "height": H, "aspect": args.aspect,
                    "hero_fraction": args.hero_fraction, **cfg},

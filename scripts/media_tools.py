@@ -32,29 +32,50 @@ def ffprobe_exe() -> str:
     return found
 
 
+# 候选写成 "路径" 或 "路径::face序号"。ttc 是字体集合，序号选错会拿到别的字面——
+# 例如 STHeiti Medium.ttc 的 face 0 是 Heiti TC（繁体），简体在 face 1。
 FONT_CANDIDATES = {
     "cjk_bold": [
+        # 思源黑体 Heavy 是本项目定稿字重：简体字面、字重够压住画面
+        "~/Library/Fonts/SourceHanSansSC-Heavy.otf",
+        "~/Library/Fonts/NotoSansCJKsc-Black.otf",
+        "~/Library/Fonts/SourceHanSansSC-Bold.otf",
+        "~/Library/Fonts/NotoSansCJKsc-Bold.otf",
         "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-        "/System/Library/Fonts/STHeiti Medium.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Medium.ttc::1",
         "C:/Windows/Fonts/msyhbd.ttc",
     ],
     "cjk_regular": [
+        "~/Library/Fonts/SourceHanSansSC-Regular.otf",
+        "~/Library/Fonts/NotoSansCJKsc-Regular.otf",
         "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc::1",
         "C:/Windows/Fonts/msyh.ttc",
     ],
+    # 拉丁也优先思源：它自带西文字形，中英同族，英文行和时间码不会像外挂上去的
     "latin": [
+        "~/Library/Fonts/SourceHanSansSC-Regular.otf",
+        "~/Library/Fonts/NotoSansCJKsc-Regular.otf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
         "C:/Windows/Fonts/arial.ttf",
     ],
 }
+
+
+def split_font_spec(spec: str) -> tuple[str, int]:
+    """把 "路径::序号" 拆成 (路径, 序号)；没写序号就是 0。"""
+    text = str(spec)
+    if "::" in text:
+        path, _, idx = text.rpartition("::")
+        if idx.isdigit():
+            return str(Path(path).expanduser()), int(idx)
+    return str(Path(text).expanduser()), 0
 
 
 def _fontconfig_match(pattern: str) -> str | None:
@@ -75,13 +96,16 @@ def resolve_font(kind: str, explicit: str | None = None) -> str:
     env_name = f"VIDEO_QUOTE_IMAGE_{kind.upper()}_FONT"
     requested = explicit or os.environ.get(env_name)
     if requested:
-        path = Path(requested).expanduser()
-        if path.is_file():
-            return str(path)
+        path, index = split_font_spec(requested)
+        if Path(path).is_file():
+            # 和候选分支保持一致：一律返回展开后的绝对路径 + 可选 ::face
+            return f"{path}::{index}" if index else path
         raise SystemExit(f"font does not exist: {path} ({env_name})")
     for candidate in FONT_CANDIDATES[kind]:
-        if Path(candidate).is_file():
-            return candidate
+        path, index = split_font_spec(candidate)
+        if Path(path).is_file():
+            # 返回展开后的绝对路径：调用方要拿它算哈希、写进渲染证据，带 ~ 会打不开
+            return f"{path}::{index}" if index else path
     pattern = "Noto Sans CJK SC:style=Bold" if kind == "cjk_bold" else (
         "Noto Sans CJK SC" if kind == "cjk_regular" else "Noto Sans"
     )

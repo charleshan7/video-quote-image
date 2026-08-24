@@ -1,3 +1,4 @@
 -r requirements-tools.txt
 PyYAML>=6,<7
 ruff>=0.11,<1
+pytest>=8,<10

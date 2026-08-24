@@ -8,7 +8,19 @@
 
 ## 字体
 
-渲染器会自动寻找 Noto CJK、macOS STHeiti/PingFang 或 Windows 微软雅黑，并做中文字形检查。自动发现失败时显式传字体路径。实际路径会写入 `render.json`；禁止静默回退到 Pillow 默认字体。
+定稿字重是**思源黑体 SC Heavy**（`~/Library/Fonts/SourceHanSansSC-Heavy.otf`），
+候选表首位，不用传参数。选它的理由：简体字面、字重足够压住画面，
+七条排下来不糊；Bold 更透气但首图冲击力不足，得意黑自带倾斜、只适合标题。
+
+候选顺序：思源黑 Heavy → Noto CJK Black/Bold → Linux 系统 Noto → macOS 华文黑体 → Windows 雅黑。
+自动发现失败时显式传 `--cjk-bold-font`，或设环境变量 `VIDEO_QUOTE_IMAGE_CJK_BOLD_FONT`。
+
+**ttc 字体集合必须指定 face 序号**，写成 `路径::序号`。
+`STHeiti Medium.ttc` 的 face 0 是 Heiti TC（繁体字面），简体在 face 1——
+按 0 取等于用繁体字面渲简体文案，「直真具者每骨」这些字会不对味。
+候选表里已写成 `::1`，自己传路径时也要带。
+
+实际路径和文件哈希都会写进 `render.json`；禁止静默回退到 Pillow 默认字体。
 
 ## 烧录字幕
 

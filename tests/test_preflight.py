@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from media_tools import assert_font_glyphs, resolve_font
+from media_tools import assert_font_glyphs, resolve_font, split_font_spec
 from preflight import (
     asr_family,
     check_frame_audit,
@@ -30,9 +30,30 @@ class PreflightTests(unittest.TestCase):
     def test_unknown_engine_is_not_its_own_family(self):
         self.assertEqual(asr_family("invented-engine"), "unknown")
 
-    def test_latin_font_is_rejected_for_chinese(self):
+    def test_latin_only_font_is_rejected_for_chinese(self):
+        """只含拉丁字形的字体渲中文会得到一排豆腐块，必须在渲染前拦下。
+
+        不能用 resolve_font("latin") 取样：拉丁字体现已优先思源（自带西文，
+        中英同族），它本来就有中文字形，拿它当反例测不出这道守卫。
+        """
+        latin_only = [
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+        ]
+        sample = next((p for p in latin_only if Path(p).is_file()), None)
+        if sample is None:
+            self.skipTest("本机没有可用的纯拉丁字体样本")
         with self.assertRaises(SystemExit):
-            assert_font_glyphs(resolve_font("latin"), "中文金句", "cjk")
+            assert_font_glyphs(sample, "中文金句", "cjk")
+
+    def test_resolved_fonts_cover_what_they_render(self):
+        """三处字体各自要覆盖它实际要画的字符，覆盖不了应当抛错而不是画豆腐块。"""
+        for kind, sample in (("cjk_bold", "中文金句"),
+                             ("cjk_regular", "中文小标"),
+                             ("latin", "Bloomberg 2026 0123456789")):
+            path, index = split_font_spec(resolve_font(kind))
+            assert_font_glyphs(path, sample, kind, index=index)
 
     def test_load_json_returns_data(self):
         with tempfile.TemporaryDirectory() as tmp:

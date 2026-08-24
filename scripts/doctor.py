@@ -6,10 +6,28 @@ import argparse
 import importlib
 import importlib.metadata
 import json
+import re
 import shutil
 import sys
+from pathlib import Path
 
 from media_tools import assert_font_glyphs, ffmpeg_exe, ffprobe_exe, resolve_font
+
+
+def read_requirements() -> dict[str, str]:
+    """读 requirements.txt，返回 {发行包名: 原始约束}。不递归 -r，基础清单就够。"""
+    path = Path(__file__).resolve().parent.parent / "requirements.txt"
+    found: dict[str, str] = {}
+    if not path.is_file():
+        return found
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        name = re.split(r"[<>=!~\[]", line, 1)[0].strip()
+        if name:
+            found[name] = line
+    return found
 
 
 def main() -> int:
@@ -20,6 +38,17 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     report = {"python": sys.version.split()[0], "mode": args.mode, "ok": {}, "missing": {}}
+
+    # 逐条核对 requirements.txt 里声明的发行包是否真的装进了当前解释器。
+    # 只列 import 名会漏：fonttools 曾经写在 requirements 里但 venv 没装，
+    # doctor 全绿，直到渲染跑到字形校验那一步才崩。
+    for dist, spec in read_requirements().items():
+        try:
+            report["ok"][dist] = importlib.metadata.version(dist)
+        except importlib.metadata.PackageNotFoundError:
+            report["missing"][dist] = (
+                f"requirements.txt 声明了 {spec}，但当前 venv 没装；"
+                f"跑 uv pip install -r requirements.txt 同步")
 
     modules = ["PIL", "imageio_ffmpeg", "jsonschema"]
     if args.mode == "maintain":
