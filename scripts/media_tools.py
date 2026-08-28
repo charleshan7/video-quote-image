@@ -129,6 +129,12 @@ def assert_font_glyphs(path: str, sample: str, label: str, index: int = 0) -> No
     from fontTools.ttLib import TTFont
     from PIL import ImageFont
 
+    # resolve_font 返回的是 "路径::face序号"，调用方不一定拆过：整串当路径打开
+    # 会报 "cannot open resource"，看起来像字体不存在，其实只是没拆。
+    path, spec_index = split_font_spec(path)
+    if spec_index:
+        index = spec_index
+
     try:
         logging.getLogger("fontTools").setLevel(logging.ERROR)
         ImageFont.truetype(path, 48, index=index)

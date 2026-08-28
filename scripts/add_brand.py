@@ -16,7 +16,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from media_tools import assert_font_glyphs, resolve_font
+from media_tools import assert_font_glyphs, resolve_font, split_font_spec
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 LATIN = ""
@@ -61,16 +61,25 @@ def stamp(base, mask, xy, color, halo, blur, spread):
     base.paste(Image.new("RGB", mask.size, color), (x, y), mask)
 
 
+def latin_font(size):
+    """LATIN 可能是 "路径::face序号"；ttc 是字体集合，序号选错会拿到别的字面。"""
+    path, index = split_font_spec(LATIN)
+    try:
+        return ImageFont.truetype(path, size, index=index)
+    except OSError as exc:
+        raise SystemExit(f"字体加载失败：{path}(face {index}): {exc}") from exc
+
+
 def fit_font(target_h, text):
     """选字号让该字形的墨迹高度≈target_h（@ 的字面高和字号差很多）。"""
     size = max(6, int(target_h * 1.2))
     while size < target_h * 4:
-        f = ImageFont.truetype(LATIN, size)
+        f = latin_font(size)
         bb = f.getbbox(text)
         if bb[3] - bb[1] >= target_h:
             return f, bb
         size += 1
-    f = ImageFont.truetype(LATIN, size)
+    f = latin_font(size)
     return f, f.getbbox(text)
 
 
@@ -167,7 +176,7 @@ def main():
         anchor = "主画面无 footer 行，退到左下角"
     else:
         fy = hero_h - f_up                            # render_quote_cards 里 footer 的 y
-        ff = ImageFont.truetype(LATIN, f_size)
+        ff = latin_font(f_size)
         fb = ff.getbbox(footer)
         fw = ImageDraw.Draw(base).textlength(footer, font=ff)
         # 垂直：字标墨迹中心对齐 footer 墨迹中心
@@ -192,7 +201,8 @@ def main():
             "source_sha256": sha256(a.src), "output_sha256": sha256(out),
             "icon_sha256": sha256(L / "cat-circle.webp"),
             "wordmark_sha256": sha256(L / "wordmark.webp"),
-            "latin_font": LATIN, "latin_font_sha256": sha256(LATIN),
+            "latin_font": LATIN,
+            "latin_font_sha256": sha256(split_font_spec(LATIN)[0]),
             "render_metadata": str(rp) if R else None,
             "render_sha256": sha256(rp) if R else None,
             "icon_box": [ix, iy, icon.width, icon.height],

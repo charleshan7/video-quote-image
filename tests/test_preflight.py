@@ -55,6 +55,28 @@ class PreflightTests(unittest.TestCase):
             path, index = split_font_spec(resolve_font(kind))
             assert_font_glyphs(path, sample, kind, index=index)
 
+    def test_font_spec_with_face_suffix_is_accepted(self):
+        """resolve_font 返回的是 "路径::face序号"，字形守卫必须自己拆开再打开文件。
+
+        doctor 和 add_brand 曾把整串 spec 当路径丢给 Pillow，一旦回退到带
+        face 序号的 ttc 候选（macOS 的 STHeiti Medium.ttc::1），就报
+        "cannot open resource"——字体明明在，只是路径没拆。
+        """
+        path, _ = split_font_spec(resolve_font("cjk_bold"))
+        assert_font_glyphs(f"{path}::0", "中文金句", "cjk_bold")
+
+    def test_add_brand_loads_font_spec_with_face_suffix(self):
+        """add_brand 自己把 LATIN 交给 Pillow，同样要吃得下带 face 的 spec。"""
+        import add_brand
+
+        path, _ = split_font_spec(resolve_font("latin"))
+        original = add_brand.LATIN
+        add_brand.LATIN = f"{path}::0"
+        try:
+            self.assertIsNotNone(add_brand.latin_font(24))
+        finally:
+            add_brand.LATIN = original
+
     def test_load_json_returns_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "data.json"
