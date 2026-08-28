@@ -12,7 +12,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from media_tools import ffmpeg_exe, resolve_font
+from media_tools import ffmpeg_exe, resolve_font, split_font_spec
 
 
 def sha256(path):
@@ -170,11 +170,15 @@ class PreflightIntegrationTests(unittest.TestCase):
             output.parent.mkdir(parents=True, exist_ok=True)
             Image.new("RGB", (1440, 1920), "black").save(output)
             Image.new("RGB", (360, 480), "black").save(project / "images/final_contact_sheet.jpg")
-            fonts = {name: resolve_font(name) for name in ["cjk_bold", "cjk_regular", "latin"]}
+            # 证据里的字体值可能带 "::face序号"（macOS 的 ttc 候选就是这样），
+            # 门禁必须拆开再查文件；这里显式带上后缀，让这条路径一直被测到。
+            fonts = {name: f"{split_font_spec(resolve_font(name))[0]}::0"
+                     for name in ["cjk_bold", "cjk_regular", "latin"]}
             write_json(project, "audit/render.json", {
                 "width": 1440, "height": 1920, "source_subtitle_policy": "verified-absent",
                 "source_crop_bottom": 0, "fonts": fonts,
-                "font_sha256": {name: sha256(path) for name, path in fonts.items()},
+                "font_sha256": {name: sha256(split_font_spec(spec)[0])
+                                for name, spec in fonts.items()},
                 "renderer_sha256": sha256(ROOT / "scripts/render_quote_cards.py"),
                 "config": {str(index): index for index in range(10)},
                 "spec_sha256": sha256(project / "audit/spec.json"),

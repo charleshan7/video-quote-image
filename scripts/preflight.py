@@ -26,7 +26,7 @@ from typing import Any
 from build_release_manifest import BASE_ARTIFACTS
 from jsonschema import Draft202012Validator, FormatChecker
 from locate_quotes import load_cues, normalize_text
-from media_tools import ffprobe_exe
+from media_tools import ffprobe_exe, split_font_spec
 
 CN_RE = re.compile(r"[\u3400-\u9fff]")
 REQUIRED_PEOPLE = ["person_id", "name", "person_type", "role", "source_url", "source_quote", "verified_at", "confidence"]
@@ -480,7 +480,8 @@ def check_images(root: Path, image_dir: Path, render: Path, spec_path: Path, vid
         if video.exists() and render_data.get("source_video_sha256") != sha256_file(video):
             errors.append("render.json source video hash does not match current video")
         for font_name, font_value in (render_data.get("fonts") or {}).items():
-            font_path = Path(str(font_value))
+            # 证据里的字体值是 "路径::face序号"，整串当路径查会误判成字体已丢失
+            font_path = Path(split_font_spec(str(font_value))[0])
             if not font_path.exists():
                 errors.append(f"render font is no longer available: {font_name}")
             elif (render_data.get("font_sha256") or {}).get(font_name) != sha256_file(font_path):
@@ -763,7 +764,8 @@ def check_release_manifest(root: Path, manifest: Path, spec: dict[str, Any] | No
             render_meta = rel(root, str(meta.get("render_metadata", "")))
             if render_meta.exists() and meta.get("render_sha256") != sha256_file(render_meta):
                 errors.append(f"brand metadata {meta_path.name}: render hash mismatch")
-            font_path = Path(str(meta.get("latin_font", "")))
+            # 同样带 ::face 序号：不拆的话 exists() 恒为假，这道哈希校验会被静默跳过
+            font_path = Path(split_font_spec(str(meta.get("latin_font", "")))[0])
             if font_path.exists() and meta.get("latin_font_sha256") != sha256_file(font_path):
                 errors.append(f"brand metadata {meta_path.name}: font hash mismatch")
     elif branded or brand_meta:
